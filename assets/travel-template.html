@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>@@TITLE@@ · 旅行手帐</title>
+<style>
+:root{--paper:#f7f3e9;--sheet:#fffdf7;--ink:#38372e;--muted:#716f63;--line:#e0dacc;--accent:#a84b30;--soft:#f2e6d2;--sage:#637a67}
+*{box-sizing:border-box}html{scroll-padding-top:92px;scroll-behavior:smooth}body{margin:0;background-color:var(--paper);background-image:radial-gradient(#bbae902c .6px,transparent .6px);background-size:7px 7px;color:var(--ink);font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif;font-size:16px;line-height:1.85;overflow-wrap:anywhere}
+::selection{background:#efc997;color:#38372e}.mast{max-width:1120px;margin:auto;padding:25px 34px 18px;display:flex;align-items:center;justify-content:space-between;gap:20px;font-family:"KaiTi","STKaiti",serif;font-size:21px}.mast-mark{display:flex;align-items:center;gap:10px}.mast-mark svg{width:30px;height:30px;color:var(--accent)}.mast small{font:10px/1.5 Georgia,serif;letter-spacing:.22em;color:var(--muted)}
+nav{position:sticky;top:0;z-index:5;display:flex;gap:8px;max-width:1052px;margin:auto;padding:10px 0;background:var(--paper);border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}nav::-webkit-scrollbar{display:none}nav a{flex:none;min-height:44px;display:flex;align-items:center;padding:7px 16px;border-radius:7px;text-decoration:none;color:var(--muted);font-size:14px;transition:background .15s,color .15s}nav a:hover,nav a[aria-current="location"]{color:var(--accent);background:#eee3d2}a:focus-visible,button:focus-visible,summary:focus-visible,input:focus-visible{outline:3px solid #a84b30;outline-offset:4px}
+main{max-width:1120px;margin:auto;padding:28px 34px 64px}.panel{scroll-margin-top:90px;padding:38px 0 0;margin:0 0 48px;border-top:1px solid var(--line)}h1,h2,.route{font-family:"Songti SC","STSong","SimSun",serif}h1{font-size:clamp(36px,5vw,60px);line-height:1.38;letter-spacing:-.04em;margin:20px 0 22px;font-weight:600;text-wrap:balance}h2{font-size:28px;line-height:1.5;font-weight:600;margin:0 0 22px}h3{font-size:18px;line-height:1.6;margin:6px 0 12px;font-weight:600}p{margin:8px 0 14px}.muted,small{color:var(--muted)}small{font-size:12px}a{color:var(--accent);text-underline-offset:4px}ul{padding-left:20px}li{margin:7px 0}li::marker{color:var(--accent)}
+#overview{padding-top:0;border-top:0}#overview>h2{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}.demo-note{font-size:12px;color:var(--muted);margin:0 0 30px}.cover{padding:26px 0 42px}.cover-meta{display:flex;align-items:center;gap:18px;margin:0 0 34px;font-size:12px;letter-spacing:.14em;color:var(--muted)}.cover-meta:before,.cover-meta:after{content:"";flex:1;border-top:1px solid var(--line)}.kicker{font-family:"KaiTi","STKaiti",serif;font-size:16px;letter-spacing:.16em;color:var(--accent)}.lead{font-size:16px}.lead .lead-arrow{width:46px;height:20px;vertical-align:-2px;color:var(--accent);margin:0 8px}.trip-style{color:var(--muted);font-size:14px}.cover-figures{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin:38px 0 0;padding-top:24px;border-top:1px solid var(--line)}.cover-figures dt{font-size:11px;letter-spacing:.14em;color:var(--muted)}.cover-figures dd{margin:6px 0 0;font:30px/1.4 Georgia,serif;color:var(--accent)}.cover-figures dd small{font:13px/1.4 "Songti SC","STSong","SimSun",serif;color:var(--muted)}
+.stay-note{display:flex;align-items:center;gap:24px;padding:18px 0;border-top:1px dashed var(--line);border-bottom:1px dashed var(--line)}.stay-note p{margin:0;font-size:14px}.eyebrow{flex:none;display:inline-block;color:var(--accent);font-size:12px;padding:3px 10px;border:1px solid #ba765d;border-radius:3px;transform:rotate(-3deg)}.alert{background:#f2e7d1;border-radius:3px 14px 14px 3px;padding:19px 24px;margin:25px 0;color:#694b31;font-size:14px;border-left:3px solid #c59863}.alert strong{font-size:16px;font-weight:600}.alert ul{margin-bottom:0}.alert li{margin:5px 0}.planning-notes{margin-top:22px}.planning-notes h3{margin-top:16px;font-size:15px}details{font-size:14px;color:var(--muted)}summary{min-height:44px;padding:8px 0;cursor:pointer;color:var(--ink)}summary::marker{color:var(--accent)}details p{margin:6px 0 15px}
+.day-heading{display:flex;align-items:center;gap:22px;margin-bottom:26px}.day-heading h2{margin:0}.day-number{font:italic 66px/1 Georgia,serif;color:#b38460;letter-spacing:-.08em}.route{font-size:23px;line-height:1.7;color:var(--ink);margin:0 0 12px;text-wrap:balance}.tag{display:inline-block;background:#ede5d5;color:#68543b;padding:2px 9px;font-size:11px;font-weight:500;border-radius:4px}.day-panel>.tag{margin-right:8px}.day-panel>p:not(.route){font-size:13px;color:var(--muted)}
+.stop{display:grid;grid-template-columns:133px minmax(0,1fr);gap:27px;padding:32px 0;position:relative}.stop+.stop{border-top:1px dashed var(--line)}.time{margin:5px 0;font-variant-numeric:tabular-nums;line-height:1.55}.time time{font:29px/1.3 Georgia,serif;color:var(--accent)}.time-end{display:block;font-size:14px;color:var(--muted);margin:4px 0}.time small{display:block;font-size:10px}.stop-body{border-left:1px solid #d5c6b3;padding-left:28px;position:relative;min-width:0}.stop-body:before{content:"";position:absolute;left:-5px;top:12px;width:9px;height:9px;background:#b78b67;border:2px solid var(--paper);border-radius:50%}.stop-body>h3{font-size:21px}.stop-body>p{font-size:14px}.address{background:#eee9dd;padding:13px 15px;display:flex;align-items:center;justify-content:space-between;gap:12px;border-radius:8px;font-size:13px}.address span{user-select:text;-webkit-user-select:text}.address button{flex:none}button{font:inherit;font-size:12px;border:1px solid #c6b69d;background:var(--sheet);color:var(--ink);min-height:44px;cursor:pointer;padding:7px 12px;border-radius:6px;align-self:center}button:hover{background:#efe3d1}[hidden]{display:none!important}.fact{border-left:2px solid #c6cdbb;padding-left:13px;font-size:13px;margin-top:18px}.fact-kind{font-size:12px;font-style:italic;color:var(--sage)}.fact-kind.unk{color:var(--accent)}.note,.booking{padding:12px 14px;background:#e8ecdf;border-radius:5px}.source-ref{font-size:11px;margin-right:8px}.alternative{padding:22px 25px;background:var(--sheet);border:1px dashed #cbbfa6;border-radius:4px 18px 4px 4px;font-size:14px;margin-top:22px}.alternative h3{font-family:"KaiTi","STKaiti",serif;font-size:20px}
+#tasks{background:var(--sheet);border:0;padding:35px 38px 26px;box-shadow:0 2px 8px #5f4e3008;position:relative}#tasks:before{content:"";position:absolute;left:38px;top:-12px;width:70px;height:24px;background:#dbe0c9bd;transform:rotate(-4deg)}#tasks h2{margin-bottom:6px}.section-intro{font-size:14px;color:var(--muted)}.save-status{font-size:12px;color:var(--sage);margin-bottom:0}.checklist-help{font-size:12px;margin:0 0 12px}.checklist-help summary{font-size:12px;color:var(--muted)}.task{padding:22px 0;border-bottom:1px dashed var(--line)}.task:last-child{border-bottom:0}.task p{font-size:13px;margin:7px 0}.task-label{display:flex;align-items:flex-start;gap:14px;min-height:44px;padding:8px 0;cursor:pointer}.task-label input{flex:none;width:22px;height:22px;margin:3px 0 0;accent-color:var(--sage);cursor:pointer}.task h3{margin:4px 0}.task-deadline{color:var(--accent)}.is-done .task-label span{text-decoration:line-through;color:var(--muted)}.is-done .tag{background:#e5eadf;color:#536b54}
+.cost-list{display:grid;grid-template-columns:1fr 1fr;column-gap:38px}.cost{padding:22px 0;border-bottom:1px dashed var(--line)}.cost p{font-size:13px}.cost .amount{font:25px/1.5 Georgia,serif;color:var(--accent)}.totals{background:#e9ddc1;color:#51412e;padding:24px 28px;margin:24px 0 12px;border-radius:2px 15px 2px 2px;border-top:1px dashed #bda785;border-bottom:1px dashed #bda785}.totals p{font-size:13px}.totals strong{font:36px/1.6 Georgia,serif;display:block;letter-spacing:-.04em}.source{padding:22px 0;border-bottom:1px dashed var(--line);scroll-margin-top:90px;font-size:13px}.source h3{font-size:16px}#sources,#changes{color:var(--muted)}#sources h2,#changes h2{font-size:23px;color:var(--ink)}#changes{font-size:13px}footer{max-width:1120px;margin:auto;padding:0 34px 38px;color:var(--muted);font-size:11px}footer p{margin-top:12px}.footer-sign{display:block;margin:0 0 22px;font:20px/1.5 "KaiTi","STKaiti",serif;color:var(--accent)}#copy-status{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100% - 32px);z-index:10;background:#514d3d;color:#fffdf7;padding:12px 20px;border-radius:8px;box-shadow:0 4px 20px #38372e22;font-size:14px;pointer-events:none}#copy-status:empty{display:none}
+.route{padding-bottom:16px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='8' viewBox='0 0 120 8'%3E%3Cpath d='M0 5 Q15 1 30 5 T60 5 T90 5 T120 5' fill='none' stroke='%23c9a15f' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") left bottom repeat-x;background-size:120px 8px}.source-no{font:italic 22px/1 Georgia,serif;color:#b38460;margin-right:6px}.source-id{font-size:11px;color:var(--muted);margin-left:8px}.source-conflict{color:var(--accent)}.source-meta{margin-top:10px}.cost-detail{font-size:12px;color:var(--muted)}
+@media(max-width:760px){.mast{padding:20px 22px 14px}nav{padding:7px 14px;margin:0 8px}nav a{padding:5px 12px}main{padding:24px 22px 42px}.cover{padding:8px 0 30px}.cover-meta{gap:10px;font-size:11px;margin-bottom:24px}.cover-figures{gap:16px;margin-top:28px;padding-top:18px}.cover-figures dd{font-size:22px}.kicker{font-size:14px}h1{font-size:43px;margin-top:12px;max-width:10em}.stay-note{align-items:flex-start;gap:16px}.stay-note .eyebrow{margin-top:5px}.stay-note p{font-size:13px}.panel{padding-top:28px;margin-bottom:35px}h2{font-size:25px}.day-heading{gap:16px}.day-heading h2{font-size:23px}.day-number{font-size:53px}.route{font-size:21px}.stop{grid-template-columns:1fr;gap:14px;padding:24px 0}.time{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px;margin:0}.time time{font-size:26px}.time-end{display:inline;margin:0}.time small{margin-left:3px}.stop-body{padding-left:18px;margin-left:4px}.stop-body>h3{font-size:19px}.address{align-items:flex-start;flex-direction:column;gap:9px}.address button{align-self:flex-start}.alert{padding:17px 19px}#tasks{padding:30px 22px 20px}.cost-list{grid-template-columns:1fr}.totals{padding:20px}.totals strong{font-size:31px}footer{padding:0 22px 30px}}
+@media(max-width:360px){.mast{padding-left:16px;padding-right:16px}.mast small{font-size:8px}.mast-mark{gap:6px}main{padding-left:16px;padding-right:16px}h1{font-size:37px}.cover-meta{letter-spacing:.08em}.cover-figures{grid-template-columns:1fr;gap:14px}.cover-figures dd{font-size:24px}.stay-note{flex-direction:column;gap:12px}.day-heading h2{font-size:20px}.day-number{font-size:48px}#tasks{padding-left:17px;padding-right:17px}.task-label{gap:10px}.totals strong{font-size:28px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+@media print{body{background:white;font-size:10pt}nav,.copy,#copy-status,.mast small{display:none!important}main{max-width:none;padding:0}.mast,footer{padding:12px 0}.panel{break-inside:auto}.stop,.task,.source,.cost{break-inside:avoid}.cover{padding:0 0 20px}.cover-figures dd{font-size:20pt}h1{font-size:30pt}details>*{display:block!important}#tasks{border:1px solid var(--line);box-shadow:none}.alert,.totals{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+</style>
+</head>
+<body>
+<div class="mast"><span class="mast-mark"><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><circle cx="16" cy="16" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M16 2v5m0 18v5M2 16h5m18 0h5M6 6l4 4m12 12 4 4M6 26l4-4M22 10l4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>旅行手帐</span><small>A LITTLE JOURNEY</small></div>
+<nav aria-label="攻略导航">@@NAV@@</nav>
+<main>@@BODY@@</main>
+<footer><span class="footer-sign">带上这份手帐，慢慢走。</span>@@FOOTER@@<p>存好这一页，路上离线也能翻看。地址可长按复制，来源链接需要联网。行程时间按所标当地时区阅读；出发前记得复核可能变化的安排。手机本地文件支持取决于实际打开方式。</p></footer>
+<p id="copy-status" role="status" aria-live="polite"></p>
+<script>
+(function(){
+  var checklist=document.querySelector('[data-checklist-key]');
+  if(!checklist) return;
+  var message=document.getElementById('task-save-status'),storage=null;
+  var prefix=checklist.dataset.checklistKey+':';
+  function unavailable(){
+    storage=null;
+    message.textContent='当前浏览器无法保存进度；勾选仅在本次页面打开期间有效。';
+  }
+  try{
+    storage=window.localStorage;
+    storage.setItem(prefix+'!storage-probe','1');
+    storage.removeItem(prefix+'!storage-probe');
+    message.textContent='勾选进度会自动记在这个浏览器里。';
+  }catch(error){unavailable();}
+  checklist.querySelectorAll('[data-task-id]').forEach(function(task){
+    var checkbox=task.querySelector('input[type="checkbox"]');
+    var key=prefix+task.dataset.taskId;
+    checkbox.checked=checkbox.defaultChecked;
+    if(storage){
+      try{
+        var saved=storage.getItem(key);
+        if(saved==='true' || saved==='false') checkbox.checked=saved==='true';
+      }catch(error){unavailable();}
+    }
+    function update(){
+      task.classList.toggle('is-done',checkbox.checked);
+      task.querySelector('[data-task-status]').textContent=checkbox.checked?'已完成':'待办';
+    }
+    update();
+    checkbox.disabled=false;
+    checkbox.addEventListener('change',function(){
+      update();
+      if(storage){
+        try{storage.setItem(key,String(checkbox.checked));}
+        catch(error){unavailable();}
+      }
+    });
+  });
+})();
+</script>
+<script>
+(function(){
+  var status=document.getElementById('copy-status'),timer;
+  document.querySelectorAll('[data-copy]').forEach(function(button){
+    button.hidden=false;
+    button.addEventListener('click',async function(){
+      var address=document.getElementById(button.dataset.copy);
+      try{
+        if(!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('clipboard unavailable');
+        await navigator.clipboard.writeText(address.textContent);
+        status.textContent='地址已复制';
+      }catch(error){
+        var range=document.createRange();
+        range.selectNodeContents(address);
+        var selection=window.getSelection();
+        if(selection){selection.removeAllRanges();selection.addRange(range);}
+        status.textContent='自动复制不可用，请长按或选择地址复制。';
+      }
+      clearTimeout(timer);timer=setTimeout(function(){status.textContent='';},5500);
+    });
+  });
+})();
+</script>
+</body>
+</html>

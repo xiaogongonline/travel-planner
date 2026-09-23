@@ -1,0 +1,420 @@
+{
+  "schema_version": 1,
+  "title": "慢一点，沿河走走",
+  "revision": "demo-1",
+  "generated_at": "2026-09-23T12:00:00+08:00",
+  "is_demo": true,
+  "status": "conditional",
+  "trip": {
+    "origin": "示例出发城",
+    "destination": "示例河湾城",
+    "start_date": "2026-10-02",
+    "end_date": "2026-10-03",
+    "timezone": "Asia/Shanghai",
+    "travelers": 2,
+    "style": "两人慢游 · 留出午休 · 不赶打卡",
+    "lodging": "示例河湾步行区；具体酒店未定，接驳交通是估算"
+  },
+  "budget": {
+    "currency": "CNY",
+    "limit": 1800,
+    "hard_limit": true,
+    "scope": "total",
+    "basis": "两人全程，含往返、1 房 1 晚、餐饮与备用金；全部为测试数据",
+    "complete": true
+  },
+  "constraints": [
+    {
+      "id": "c-late",
+      "text": "每天 09:00 以后开始活动",
+      "kind": "hard",
+      "status": "satisfied",
+      "evidence": "两天首项分别为 09:30、10:00"
+    },
+    {
+      "id": "c-rest",
+      "text": "第一天下午保留休息",
+      "kind": "preference",
+      "status": "satisfied",
+      "evidence": "15:30–17:00 预留休息"
+    }
+  ],
+  "assumptions": [
+    "酒店暂以河湾步行区为基准，确认酒店后重新估算交通。"
+  ],
+  "sources": [
+    {
+      "id": "s-demo",
+      "name": "模拟测试条件",
+      "kind": "demo",
+      "url": "",
+      "checked_at": "2026-09-23T11:00:00+08:00",
+      "valid_from": "2026-10-02",
+      "valid_to": "2026-10-03",
+      "applies_to": "仅供生成器、日期和预算测试，不对应真实地点",
+      "summary": "模拟展馆开放 10:00–16:00，需预约；费用均为模拟区间。",
+      "recheck_on": null,
+      "conflict": ""
+    }
+  ],
+  "places": [
+    {
+      "id": "p-river",
+      "name": "示例河湾步道",
+      "address": "示例河湾城 · 河岸路示例入口（虚构）",
+      "search_terms": "示例河湾步道（虚构，不可导航）",
+      "notes": "沿河慢走，累了随时折返。",
+      "facts": [
+        {
+          "label": "游玩时长",
+          "value": "约 60–90 分钟，按体力缩短",
+          "kind": "estimate",
+          "basis": "模板演示的轻松步行假设",
+          "source_ids": [
+            "s-demo"
+          ],
+          "critical": false
+        }
+      ]
+    },
+    {
+      "id": "p-museum",
+      "name": "示例河湾展馆",
+      "address": "示例河湾城 · 文化路 1 号（虚构）",
+      "search_terms": "示例河湾展馆（虚构，不可导航）",
+      "notes": "模拟预约未完成，不能视为已安排妥当。",
+      "facts": [
+        {
+          "label": "开放与预约",
+          "value": "模拟条件：10:00–16:00，预约成功后方可进入",
+          "kind": "assumption",
+          "basis": "测试条件，不是真实开放信息",
+          "source_ids": [
+            "s-demo"
+          ],
+          "critical": false
+        }
+      ]
+    }
+  ],
+  "bookings": [
+    {
+      "id": "b-museum",
+      "title": "示例展馆入场",
+      "status": "pending",
+      "critical": true,
+      "date": "2026-10-03",
+      "confirmed_evidence": "",
+      "source_ids": [
+        "s-demo"
+      ],
+      "notes": "失败则取消，其他户外活动仍要判断天气。"
+    }
+  ],
+  "days": [
+    {
+      "date": "2026-10-02",
+      "summary": "到达 → 午餐与寄存 → 河湾步道 → 休息 → 晚餐",
+      "intensity": "轻松",
+      "intensity_basis": "模拟步行约 2–3 公里，连续活动不超过 90 分钟，下午休息。",
+      "items": [
+        {
+          "id": "i-arrive",
+          "title": "到达后前往住宿区域",
+          "kind": "transport",
+          "start": "2026-10-02T09:30:00+08:00",
+          "end": "2026-10-02T10:30:00+08:00",
+          "place_id": null,
+          "description": "交通方式待酒店选定后核实；仅演示 35 分钟接驳加 20 分钟缓冲。",
+          "minimum_minutes": 35,
+          "buffer_minutes": 20,
+          "booking_id": null,
+          "source_ids": [
+            "s-demo"
+          ],
+          "windows": [],
+          "notes": ""
+        },
+        {
+          "id": "i-lunch",
+          "title": "寄存行李，慢慢吃午餐",
+          "kind": "meal",
+          "start": "2026-10-02T11:00:00+08:00",
+          "end": "2026-10-02T12:30:00+08:00",
+          "place_id": null,
+          "description": "在住宿区域选择餐饮，先确认行李寄存。",
+          "minimum_minutes": 60,
+          "buffer_minutes": 20,
+          "booking_id": null,
+          "source_ids": [],
+          "windows": [],
+          "notes": ""
+        },
+        {
+          "id": "i-river",
+          "title": "沿着河岸散步",
+          "kind": "visit",
+          "start": "2026-10-02T13:00:00+08:00",
+          "end": "2026-10-02T14:30:00+08:00",
+          "place_id": "p-river",
+          "description": "不设必须走完的终点，留时间拍照、坐下休息。",
+          "minimum_minutes": 60,
+          "buffer_minutes": 15,
+          "booking_id": null,
+          "source_ids": [],
+          "windows": [],
+          "notes": "雷雨不走河岸。"
+        },
+        {
+          "id": "i-rest",
+          "title": "回住宿区休息",
+          "kind": "rest",
+          "start": "2026-10-02T15:30:00+08:00",
+          "end": "2026-10-02T17:00:00+08:00",
+          "place_id": null,
+          "description": "酒店确认后补充地址与返程交通。",
+          "minimum_minutes": 60,
+          "buffer_minutes": 0,
+          "booking_id": null,
+          "source_ids": [],
+          "windows": [],
+          "notes": ""
+        },
+        {
+          "id": "i-dinner",
+          "title": "住宿区晚餐",
+          "kind": "meal",
+          "start": "2026-10-02T18:00:00+08:00",
+          "end": "2026-10-02T19:00:00+08:00",
+          "place_id": null,
+          "description": "就近吃饭，不为一家店长时间排队。",
+          "minimum_minutes": 45,
+          "buffer_minutes": 15,
+          "booking_id": null,
+          "source_ids": [],
+          "windows": [],
+          "notes": ""
+        }
+      ],
+      "alternatives": [
+        {
+          "trigger": "下雨或步行疲劳",
+          "action": "取消河岸活动，改为住宿区休息。",
+          "dependencies": "具体室内地点未核实，不能直接当作可执行替代。",
+          "status": "conditional",
+          "source_ids": []
+        }
+      ]
+    },
+    {
+      "date": "2026-10-03",
+      "summary": "早餐与退房寄存 → 展馆 → 午餐 → 取行李返程",
+      "intensity": "适中",
+      "intensity_basis": "包含退房、寄存、取行李和返程，按实际车次调整。",
+      "items": [
+        {
+          "id": "i-museum",
+          "title": "参观展馆（预约待完成）",
+          "kind": "visit",
+          "start": "2026-10-03T10:00:00+08:00",
+          "end": "2026-10-03T11:30:00+08:00",
+          "place_id": "p-museum",
+          "description": "预约成功后才落实这项安排。",
+          "minimum_minutes": 60,
+          "buffer_minutes": 15,
+          "booking_id": "b-museum",
+          "source_ids": [
+            "s-demo"
+          ],
+          "windows": [
+            {
+              "start": "2026-10-03T10:00:00+08:00",
+              "end": "2026-10-03T16:00:00+08:00"
+            }
+          ],
+          "notes": ""
+        },
+        {
+          "id": "i-lunch2",
+          "title": "午餐后取行李",
+          "kind": "meal",
+          "start": "2026-10-03T12:00:00+08:00",
+          "end": "2026-10-03T13:00:00+08:00",
+          "place_id": null,
+          "description": "留时间取行李，不临时增加远处景点。",
+          "minimum_minutes": 45,
+          "buffer_minutes": 15,
+          "booking_id": null,
+          "source_ids": [],
+          "windows": [],
+          "notes": ""
+        },
+        {
+          "id": "i-return",
+          "title": "取行李后返程接驳",
+          "kind": "transport",
+          "start": "2026-10-03T14:00:00+08:00",
+          "end": "2026-10-03T15:15:00+08:00",
+          "place_id": null,
+          "description": "演示接驳与候车缓冲，真实车次尚未提供。",
+          "minimum_minutes": 40,
+          "buffer_minutes": 30,
+          "booking_id": null,
+          "source_ids": [],
+          "windows": [],
+          "notes": ""
+        }
+      ],
+      "alternatives": [
+        {
+          "trigger": "展馆预约失败",
+          "action": "取消展馆，预留自由活动，提前取行李。",
+          "dependencies": "户外活动依赖天气；不增加新的必须预约项目。",
+          "status": "conditional",
+          "source_ids": []
+        }
+      ]
+    }
+  ],
+  "costs": [
+    {
+      "id": "cost-travel",
+      "category": "两人往返交通（模拟）",
+      "label": "两人往返交通（模拟）",
+      "unit_low": 120,
+      "unit_high": 180,
+      "quantity": 2,
+      "unit": "人",
+      "paid": 0,
+      "optional": false,
+      "kind": "estimate",
+      "basis": "模拟双程，不代表在售车票",
+      "source_ids": [],
+      "dates": [
+        "2026-10-02",
+        "2026-10-03"
+      ]
+    },
+    {
+      "id": "cost-hotel",
+      "category": "1 间房 × 1 晚",
+      "label": "1 间房 × 1 晚",
+      "unit_low": 300,
+      "unit_high": 360,
+      "quantity": 1,
+      "unit": "房晚",
+      "paid": 0,
+      "optional": false,
+      "kind": "estimate",
+      "basis": "两人同住一间",
+      "source_ids": [],
+      "dates": [
+        "2026-10-02"
+      ]
+    },
+    {
+      "id": "cost-food",
+      "category": "两人两天餐饮",
+      "label": "两人两天餐饮",
+      "unit_low": 60,
+      "unit_high": 80,
+      "quantity": 4,
+      "unit": "人天",
+      "paid": 0,
+      "optional": false,
+      "kind": "estimate",
+      "basis": "含早餐与正餐",
+      "source_ids": [],
+      "dates": [
+        "2026-10-02",
+        "2026-10-03"
+      ]
+    },
+    {
+      "id": "cost-ticket",
+      "category": "示例展馆门票",
+      "label": "示例展馆门票",
+      "unit_low": 30,
+      "unit_high": 30,
+      "quantity": 2,
+      "unit": "人",
+      "paid": 0,
+      "optional": false,
+      "kind": "estimate",
+      "basis": "模拟票价",
+      "source_ids": [],
+      "dates": [
+        "2026-10-02",
+        "2026-10-03"
+      ]
+    },
+    {
+      "id": "cost-city",
+      "category": "接驳和市内交通",
+      "label": "接驳和市内交通",
+      "unit_low": 40,
+      "unit_high": 60,
+      "quantity": 2,
+      "unit": "天",
+      "paid": 0,
+      "optional": false,
+      "kind": "estimate",
+      "basis": "整组共享，不再乘人数",
+      "source_ids": [],
+      "dates": [
+        "2026-10-02",
+        "2026-10-03"
+      ]
+    },
+    {
+      "id": "cost-reserve",
+      "category": "备用金",
+      "label": "备用金",
+      "unit_low": 150,
+      "unit_high": 150,
+      "quantity": 1,
+      "unit": "组",
+      "paid": 0,
+      "optional": false,
+      "kind": "estimate",
+      "basis": "两人共享",
+      "source_ids": [],
+      "dates": [
+        "2026-10-02",
+        "2026-10-03"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "t-hotel",
+      "action": "确定酒店及往返车次，刷新接驳时间",
+      "deadline": null,
+      "channel": "根据实际订单录入，示例不执行预订",
+      "impact": "住宿地址和接驳尚未落实",
+      "status": "pending",
+      "critical": true
+    },
+    {
+      "id": "t-museum",
+      "action": "确认展馆预约结果",
+      "deadline": "2026-10-01T18:00:00+08:00",
+      "channel": "测试截止时间，无真实预约渠道",
+      "impact": "失败则取消该活动",
+      "status": "pending",
+      "critical": true
+    }
+  ],
+  "risks": [
+    {
+      "trigger": "天气变化影响河岸活动",
+      "action": "临近出发查可靠预报，雨天取消河岸活动。",
+      "critical": false,
+      "resolved": false
+    }
+  ],
+  "emergency": [],
+  "changes": [
+    "模拟演示：测试排版、预算计算、预约阻断与离线功能。"
+  ]
+}
