@@ -172,8 +172,9 @@ class PlannerTests(unittest.TestCase):
                 result = self.report()
                 self.assertEqual(result["budget"]["required_low"], float(expected))
                 rendered = tp.render(self.plan, result)
-                self.assertIn(f'class="amount">{expected}–{expected} CNY', rendered)
+                self.assertIn(f'class="amount">{expected}–{expected} 元', rendered)
                 self.assertIn(f'<strong>{expected}–{expected}</strong>', rendered)
+                self.assertNotIn("CNY", rendered)
 
     def test_cli_utf8_pipes_and_existing_file_recovery(self):
         env = dict(os.environ, PYTHONIOENCODING="gbk", PYTHONUTF8="0")
@@ -312,10 +313,12 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(balances, {"a": 67, "b": -34, "c": -33})
         self.assertEqual(planned[0][2], {"a": 300, "b": 300, "c": 300})
         self.assertEqual(transfers, (("b", "a", 34), ("c", "a", 33)))
-        _, message, _ = tp.render_card(self.plan, self.report())
-        self.assertIn("b → a 0.34 CNY", message)
+        page, message, _ = tp.render_card(self.plan, self.report())
+        self.assertIn("b → a 0.34 元", message)
         self.assertIn("计划支出（尚不结算）", message)
-        self.assertNotIn("9.00 CNY\n建议转账", message)
+        self.assertNotIn("9.00 元\n建议转账", message)
+        self.assertNotIn("CNY", page)
+        self.assertIn("0.34 元", page)
 
     def test_card_aa_finds_fewer_transfers_than_first_match(self):
         aa = {"members": [{"id": ident, "name": ident} for ident in "abcd"], "expenses": [

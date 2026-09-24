@@ -475,6 +475,10 @@ def checklist_key(plan):
     return "travel-planner:tasks:v1:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def display_currency(currency):
+    return "元" if currency == "CNY" else currency
+
+
 def render(plan, report):
     if report["schema_errors"]:
         raise ValueError("结构错误，拒绝生成")
@@ -496,7 +500,7 @@ def render(plan, report):
     tasks_total = len(plan["tasks"])
     tasks_done = sum(1 for t in plan["tasks"] if t["status"] == "done")
     b = report["budget"]
-    currency = esc(plan["budget"]["currency"])
+    currency = esc(display_currency(plan["budget"]["currency"]))
     budget_range = f'{b["required_low"]:,.0f}–{b["required_high"]:,.0f}' if plan["costs"] else ""
     dates = f'{esc(trip["start_date"] or "日期待定")} — {esc(trip["end_date"] or "日期待定")}'
     meta_bits = [dates, f'{trip["travelers"]} 人同行']
@@ -581,10 +585,10 @@ def render(plan, report):
     costs = ""
     for c in plan["costs"]:
         low, high = cost_range(c)
-        costs += f'<article class="cost"><h3>{esc(c["label"])}{" · 可花可不花" if c["optional"] else ""}</h3><p class="amount">{low:,.2f}–{high:,.2f} {esc(plan["budget"]["currency"])}</p><p class="cost-detail">单价 {c["unit_low"]:g}–{c["unit_high"]:g} / {esc(c["unit"])} × {c["quantity"]:g}；已付 {c["paid"]:g}</p><p>{esc(c["basis"])} {refs(c["source_ids"])}</p></article>'
+        costs += f'<article class="cost"><h3>{esc(c["label"])}{" · 可花可不花" if c["optional"] else ""}</h3><p class="amount">{low:,.2f}–{high:,.2f} {currency}</p><p class="cost-detail">单价 {c["unit_low"]:g}–{c["unit_high"]:g} / {esc(c["unit"])} × {c["quantity"]:g}；已付 {c["paid"]:g}</p><p>{esc(c["basis"])} {refs(c["source_ids"])}</p></article>'
     b = report["budget"]
-    budget_intro = f'<p>{esc(plan["budget"]["basis"])} · 预算上限：{esc(plan["budget"]["limit"] if plan["budget"]["limit"] is not None else "未设定")} {esc(plan["budget"]["currency"])}（{"全程总额" if plan["budget"]["scope"] == "total" else "剩余支出"}）</p>'
-    budget_intro += f'<div class="totals"><p>一定要花的 <strong>{b["required_low"]:,.2f}–{b["required_high"]:,.2f}</strong></p><p>其中已付 {b["paid"]:,.2f} · 路上还要付 {b["remaining_low"]:,.2f}–{b["remaining_high"]:,.2f}</p><p>可花可不花的 {b["optional_low"]:,.2f}–{b["optional_high"]:,.2f}；以上均为 {esc(plan["budget"]["currency"])}</p></div>'
+    budget_intro = f'<p>{esc(plan["budget"]["basis"])} · 预算上限：{esc(plan["budget"]["limit"] if plan["budget"]["limit"] is not None else "未设定")} {currency}（{"全程总额" if plan["budget"]["scope"] == "total" else "剩余支出"}）</p>'
+    budget_intro += f'<div class="totals"><p>一定要花的 <strong>{b["required_low"]:,.2f}–{b["required_high"]:,.2f}</strong></p><p>其中已付 {b["paid"]:,.2f} · 路上还要付 {b["remaining_low"]:,.2f}–{b["remaining_high"]:,.2f}</p><p>可花可不花的 {b["optional_low"]:,.2f}–{b["optional_high"]:,.2f}；以上均为 {currency}</p></div>'
     body += section("budget", "这趟，大概花多少", budget_intro + '<div class="cost-list">' + costs + '</div>')
     booking_html = ""
     for b in plan["bookings"]:
@@ -734,7 +738,7 @@ def card_cost(plan):
     low = sum((pair[0] for pair in required), Decimal(0)) / people
     high = sum((pair[1] for pair in required), Decimal(0)) / people
     suffix = "（已录入部分，费用未齐）" if not plan["budget"]["complete"] else ""
-    return f'{low:,.2f}–{high:,.2f} {plan["budget"]["currency"]}{suffix}'
+    return f'{low:,.2f}–{high:,.2f} {display_currency(plan["budget"]["currency"])}{suffix}'
 
 
 def aa_result(aa):
@@ -807,7 +811,7 @@ def card_content(plan, report):
             "aa_expenses": bool(aa.get("expenses")),
             "aa_paid": any(x["status"] == "paid" for x in aa.get("expenses", [])),
             "paid_expenses": [x for x in aa.get("expenses", []) if x["status"] == "paid"],
-            "currency": plan["budget"]["currency"],
+            "currency": display_currency(plan["budget"]["currency"]),
             "author": public_text(card.get("author") or "杰纶hhh")}
 
 
