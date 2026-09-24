@@ -6,9 +6,13 @@
 
 > 截图和 `assets/demo-plan.json` 使用虚构地点、价格与订单，仅用于展示效果，不能作为真实出行依据。
 
-## 安装
+## 接入 Codex、WorkBuddy、豆包工作和 TraeCode
 
-将本仓库克隆到 Codex 的 Skill 目录：
+这个 Skill 是一个包含 `SKILL.md`、`references/`、`scripts/` 和 `assets/` 的文件夹。安装时要保留整个文件夹；只导入 `SKILL.md`，旅行手帐的模板和导出脚本就无法使用。导出 HTML 需要本机可运行 `python`（Python 3）；只讨论旅行方向时不需要运行脚本。
+
+### Codex
+
+把仓库克隆到用户级 Skill 目录：
 
 ```powershell
 # Windows PowerShell
@@ -20,7 +24,33 @@ git clone https://github.com/xiaogongonline/travel-planner.git "$HOME\.codex\ski
 git clone https://github.com/xiaogongonline/travel-planner.git "$HOME/.codex/skills/travel-planner"
 ```
 
-如果该目录已经存在，先自行备份或选用别的目录；`git clone` 不会覆盖已有文件。安装后打开新的 Codex 任务，让 Skill 列表刷新。
+安装后打开新的 Codex 任务，发送“请使用 $travel-planner。国庆想出去玩，但还没想好去哪。”，检查它是否先了解出发地等关键条件。目录已存在时先检查原有内容；`git clone` 不会替你覆盖或更新它。
+
+### 先准备给其他工具导入的 ZIP
+
+在 [GitHub 仓库](https://github.com/xiaogongonline/travel-planner) 点击 **Code → Download ZIP** 并解压，或把仓库克隆到任意空目录。然后把解压后的 `SKILL.md`、`references/`、`scripts/`、`assets/` 一起压成一个 ZIP：打开 ZIP 后应直接看见 `SKILL.md`，不能只看见上一层仓库文件夹。不要选单独的 `SKILL.md`，也不用把 `.git` 放入包中。
+
+Windows PowerShell 示例（先在包含 `SKILL.md` 的目录执行）：
+
+```powershell
+Compress-Archive -Path SKILL.md,references,scripts,assets -DestinationPath "$HOME\Downloads\travel-planner-skill.zip"
+```
+
+目标 ZIP 已存在时先另取文件名，避免混淆新旧版本。
+
+### WorkBuddy
+
+打开 **专家 · Skills · Connectors → Skills → 添加技能 → 上传技能**，选择上面的 ZIP；安装后在“已安装”中确认“旅行规划”已启用，再新建对话说“用 travel-planner 帮我规划一次旅行”。界面名称若有变化，以 [WorkBuddy 技能说明](https://www.workbuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Skills-Market) 为准。
+
+### 豆包工作
+
+先在桌面客户端的技能管理中找“添加／导入本地技能”入口；如果当前版本提供该入口，选择上面的完整 ZIP，确认导入后能看到 `travel-planner`，再开新对话明确说“使用 travel-planner 技能，先了解我想怎么玩”。不同版本的导入方式可能不同；目前尚未完成豆包工作的实际导入与调用验证。如果界面没有导入入口，不要把普通豆包聊天的“技能”功能当作已安装本地 Skill。
+
+### TraeCode（TRAE）
+
+打开 **设置 → 技能与命令 → 技能 → 创建**，选择“全局”或“项目”，导入上面的完整 ZIP，然后确认技能名称和描述并启用。全局技能适合跨项目使用，项目技能只用于当前项目。详见 [TraeCode 官方技能文档](https://docs.trae.cn/ide_skills)。
+
+不论用哪个工具，安装后都用一个新对话试运行。只给“国庆想出去玩”时，预期是先问出发地、天数和旅行偏好；看到完整日程或 HTML 不代表接入正确。
 
 ## 怎么用
 
@@ -58,6 +88,25 @@ python scripts/travel_plan.py audit <work>/travel-plan.html
 ```
 
 `init` 只生成待填骨架，不是旅行方案。未落实关键预约等事项时，`render` 仍可生成醒目标记的条件性草案，不能据此认定行程已经可出发。
+
+旅行手帐的页脚署名为“由 travel-planner 生成 · @杰纶hhh”；如在 `plan.json` 的 `card.author` 填入其他名字，手帐和搭子卡会使用同一署名。
+
+## 做一张搭子卡
+
+行程有了方向后，可以说“做个搭子卡发群里”。Skill 会把每天的安排、集合、必带物品和人均必需费用整理成图片；对话里已有分工、投票或 AA 数据时才显示对应模块。图片太满会自动分成多张，另有可直接粘贴到微信群的文字版。卡片不发送消息，群友通过回复编号和接龙互动。
+
+![搭子卡演示预览](docs/dazi-card-preview.png)
+![搭子卡演示预览：投票、分工和 AA](docs/dazi-card-preview-02.png)
+
+演示图片使用虚构地点与支出。底部署名为“由 travel-planner 生成 · @杰纶hhh”。
+
+本地命令：
+
+```text
+python scripts/travel_plan.py card <work>/plan.json -o <work>/dazi-card
+```
+
+脚本使用 Python 3 标准库，并调用机器上已有的 Chrome 或 Edge 自动生成 1080×1440 PNG。用户不用打开网页或点保存；`dazi-card.txt` 是群聊文字版，`dazi-card.html` 是内部排版与离线预览文件。没有本机浏览器时，支持浏览器工具的 Agent 可以接着自动截图；若都不可用，应如实报告图片未生成。正式行程请先核对卡片上的公开内容，再分享给同行者。CLI 默认不覆盖，明确加 `--force` 才覆盖。
 
 ## 能力边界
 

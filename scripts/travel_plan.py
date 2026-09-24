@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import argparse
+from functools import lru_cache
 from datetime import date, datetime
 from decimal import Decimal
 import html
 import hashlib
 from html.parser import HTMLParser
 import json
+import os
 from pathlib import Path
 import re
+import shutil
+import struct
+import subprocess
 import sys
+import tempfile
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -21,7 +27,7 @@ BOOKING = {"not_required": "无需预约", "not_open": "尚未开放", "pending"
 KINDS = {"verified": "已核实", "user": "用户提供", "estimate": "估算",
          "assumption": "假设", "unknown": "待核实"}
 
-# A deliberately small strict contract: all fields required; empty lists allowed.
+# A deliberately small strict contract: itinerary fields are required; card is optional.
 # ("nullable", type) is the only special tuple; all other tuples are enums.
 NSTR = ("nullable", str)
 NNUM = ("nullable", float)
@@ -38,6 +44,17 @@ ITEM = {"id": str, "title": str, "kind": ("visit", "transport", "meal", "rest", 
         "start": str, "end": str, "place_id": NSTR, "description": str,
         "minimum_minutes": float, "buffer_minutes": float, "booking_id": NSTR,
         "source_ids": [str], "windows": [{"start": str, "end": str}], "notes": str}
+CARD = {
+    "author": str,
+    "meeting": {"time": NSTR, "place": str},
+    "packing": [str],
+    "roles": [{"role": str, "assignee": NSTR}],
+    "polls": [{"question": str, "options": [str], "deadline": NSTR}],
+    "aa": {"members": [{"id": str, "name": str}],
+           "expenses": [{"label": str, "amount": str, "status": ("planned", "paid"),
+                         "payer_id": NSTR, "participant_ids": [str]}]},
+}
+OPTIONAL_FIELDS = {"$": {"card"}, "$.card": set(CARD)}
 SCHEMA = {
     "schema_version": int, "title": str, "revision": str, "generated_at": str,
     "is_demo": bool, "status": tuple(STATUSES),
@@ -60,6 +77,7 @@ SCHEMA = {
     "risks": [{"trigger": str, "action": str, "critical": bool, "resolved": bool}],
     "emergency": [{"label": str, "contact": str, "basis": str, "source_ids": [str]}],
     "changes": [str],
+    "card": CARD,
 }
 
 
@@ -70,7 +88,8 @@ def schema_errors(value, spec=SCHEMA, path="$"):
             return [f"{path}: 必须是对象"]
         for key in spec:
             if key not in value:
-                errors.append(f"{path}.{key}: 缺少字段")
+                if key not in OPTIONAL_FIELDS.get(path, set()):
+                    errors.append(f"{path}.{key}: 缺少字段")
             else:
                 errors.extend(schema_errors(value[key], spec[key], f"{path}.{key}"))
         for key in value.keys() - spec.keys():
@@ -138,6 +157,44 @@ def validate(plan, as_of=None):
     for t in plan["tasks"]:
         if t["deadline"]:
             stamps.append((f"task:{t['id']}.deadline", t["deadline"]))
+    card = plan.get("card", {})
+    if card.get("meeting") and card["meeting"]["time"]:
+        stamps.append(("card.meeting.time", card["meeting"]["time"]))
+    for n, poll in enumerate(card.get("polls", []), 1):
+        if poll["deadline"]:
+            stamps.append((f"card.polls[{n}].deadline", poll["deadline"]))
+        if len(poll["options"]) < 2 or any(not option.strip() for option in poll["options"]):
+            errors.append(f"card.polls[{n}]: 至少两个非空选项")
+        if not poll["question"].strip():
+            errors.append(f"card.polls[{n}]: 问题不能为空")
+    for n, role in enumerate(card.get("roles", []), 1):
+        if not role["role"].strip():
+            errors.append(f"card.roles[{n}]: 角色不能为空")
+    if any(not item.strip() for item in card.get("packing", [])):
+        errors.append("card.packing: 物品名称不能为空")
+    aa = card.get("aa", {})
+    members = aa.get("members", [])
+    member_ids = [member["id"] for member in members]
+    if len(set(member_ids)) != len(member_ids) or any(not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", ident) for ident in member_ids):
+        errors.append("card.aa.members: 成员 ID 非法或重复")
+    if any(not member["name"].strip() for member in members):
+        errors.append("card.aa.members: 成员名不能为空")
+    if len({member["name"].strip() for member in members}) != len(members):
+        errors.append("card.aa.members: 群内显示名不能重复")
+    for n, expense in enumerate(aa.get("expenses", []), 1):
+        amount = expense["amount"]
+        if not re.fullmatch(r"(?:0|[1-9][0-9]{0,8})(?:\.[0-9]{1,2})?", amount) or Decimal(amount) <= 0:
+            errors.append(f"card.aa.expenses[{n}]: 金额须为大于零、精确到分的十进制字符串")
+        ids = expense["participant_ids"]
+        if not ids or len(ids) != len(set(ids)) or any(ident not in member_ids for ident in ids):
+            errors.append(f"card.aa.expenses[{n}]: 分摊成员为空、重复或不存在")
+        payer = expense["payer_id"]
+        if payer is not None and payer not in member_ids:
+            errors.append(f"card.aa.expenses[{n}]: 付款人不存在")
+        if expense["status"] == "paid" and payer is None:
+            errors.append(f"card.aa.expenses[{n}]: 已付款支出必须指定付款人")
+        if not expense["label"].strip():
+            errors.append(f"card.aa.expenses[{n}]: 项目名称不能为空")
     for d in plan["days"]:
         dates.append(("day.date", d["date"]))
         for i in d["items"]:
@@ -207,15 +264,14 @@ def validate(plan, as_of=None):
 
     def source_applies(sid, on_date, critical=True):
         s = sources[sid]
-        issue = None
+        issues = []
         if (s["valid_from"] and on_date < day(s["valid_from"])) or (s["valid_to"] and on_date > day(s["valid_to"])):
-            issue = f"来源 {sid} 不适用于 {on_date}，需重新核实"
+            issues.append(f"来源 {sid} 不适用于 {on_date}，需重新核实")
         if s["conflict"]:
-            issue = f"来源 {sid} 存在冲突：{s['conflict']}"
+            issues.append(f"来源 {sid} 存在冲突：{s['conflict']}")
         if s["recheck_on"] and today >= day(s["recheck_on"]):
-            issue = f"来源 {sid} 已到复核日期 {s['recheck_on']}，需重新核实"
-        if issue:
-            (blockers if critical else warnings).append(issue)
+            issues.append(f"来源 {sid} 已到复核日期 {s['recheck_on']}，需重新核实")
+        (blockers if critical else warnings).extend(issues)
 
     for s in plan["sources"]:
         if s["valid_from"] and s["valid_to"] and day(s["valid_from"]) > day(s["valid_to"]):
@@ -223,7 +279,7 @@ def validate(plan, as_of=None):
         if stamp(s["checked_at"]).date() > today:
             blockers.append(f"来源 {s['id']} 的核实日期在未来")
         if s["recheck_on"] and today >= day(s["recheck_on"]):
-            warnings.append(f"来源 {s['id']} 已到复核日期 {s['recheck_on']}")
+            warnings.append(f"来源 {s['id']} 已到复核日期 {s['recheck_on']}，需重新核实")
         if not s["applies_to"].strip():
             blockers.append(f"来源 {s['id']} 缺少适用条件")
         if s["kind"] in ("official", "provider", "secondary") and not s["url"]:
@@ -326,7 +382,7 @@ def validate(plan, as_of=None):
     totals = {"required_low": Decimal(0), "required_high": Decimal(0), "remaining_low": Decimal(0),
               "remaining_high": Decimal(0), "paid": Decimal(0), "optional_low": Decimal(0), "optional_high": Decimal(0)}
     for c in plan["costs"]:
-        lo, hi = Decimal(str(c["unit_low"])) * Decimal(str(c["quantity"])), Decimal(str(c["unit_high"])) * Decimal(str(c["quantity"]))
+        lo, hi = cost_range(c)
         paid = Decimal(str(c["paid"]))
         if lo > hi or paid > hi:
             errors.append(f"费用 {c['label']} 区间倒置或已支付超过总价上端")
@@ -361,9 +417,14 @@ def validate(plan, as_of=None):
     if plan["status"] == "ready" and blockers:
         warnings.append("请求的 ready 状态已降级，不能宣称关键安排均已落实")
     result["blockers"] = list(dict.fromkeys(blockers))
-    result["warnings"] = list(dict.fromkeys(warnings))
+    result["warnings"] = [issue for issue in dict.fromkeys(warnings) if issue not in result["blockers"]]
     result["effective_status"] = "exploration" if plan["status"] == "exploration" else ("conditional" if blockers else plan["status"])
     return result
+
+
+def cost_range(cost):
+    quantity = Decimal(str(cost["quantity"]))
+    return tuple(Decimal(str(cost[key])) * quantity for key in ("unit_low", "unit_high"))
 
 
 def esc(value):
@@ -440,7 +501,7 @@ def render(plan, report):
     dates = f'{esc(trip["start_date"] or "日期待定")} — {esc(trip["end_date"] or "日期待定")}'
     meta_bits = [dates, f'{trip["travelers"]} 人同行']
     if budget_range:
-        meta_bits.append(f'预算 {budget_range} {currency}')
+        meta_bits.append(f'预计必需花费 {budget_range} {currency}')
     overview = demo + '<div class="cover">'
     overview += f'<p class="cover-meta">{" · ".join(meta_bits)}</p>'
     overview += ('<p class="kicker">把日子，过在路上</p>'
@@ -455,7 +516,7 @@ def render(plan, report):
     todo_fig = f'{tasks_total - tasks_done}<small> 件待办 · 共 {tasks_total} 件</small>' if tasks_total else "暂无清单"
     overview += ('<dl class="cover-figures">'
                  f'<div><dt>行程</dt><dd>{day_fig}</dd></div>'
-                 f'<div><dt>预算速览</dt><dd>{budget_fig}</dd></div>'
+                 f'<div><dt>预计必需花费</dt><dd>{budget_fig}</dd></div>'
                  f'<div><dt>出发清单</dt><dd>{todo_fig}</dd></div></dl></div>')
     overview += f'<div class="stay-note"><span class="eyebrow">{esc(STATUSES[report["effective_status"]])}</span><p><span class="muted">住在哪里</span><br>{esc(trip["lodging"] or "还没定，确认后再看看怎么走")}</p></div>'
     if report["blockers"]:
@@ -519,7 +580,7 @@ def render(plan, report):
     nav += '<a href="#budget">旅行花费</a><a href="#bookings">预约</a><a href="#sources">资料夹</a>'
     costs = ""
     for c in plan["costs"]:
-        low, high = c["unit_low"] * c["quantity"], c["unit_high"] * c["quantity"]
+        low, high = cost_range(c)
         costs += f'<article class="cost"><h3>{esc(c["label"])}{" · 可花可不花" if c["optional"] else ""}</h3><p class="amount">{low:,.2f}–{high:,.2f} {esc(plan["budget"]["currency"])}</p><p class="cost-detail">单价 {c["unit_low"]:g}–{c["unit_high"]:g} / {esc(c["unit"])} × {c["quantity"]:g}；已付 {c["paid"]:g}</p><p>{esc(c["basis"])} {refs(c["source_ids"])}</p></article>'
     b = report["budget"]
     budget_intro = f'<p>{esc(plan["budget"]["basis"])} · 预算上限：{esc(plan["budget"]["limit"] if plan["budget"]["limit"] is not None else "未设定")} {esc(plan["budget"]["currency"])}（{"全程总额" if plan["budget"]["scope"] == "total" else "剩余支出"}）</p>'
@@ -547,7 +608,9 @@ def render(plan, report):
     body += section("sources", "随身资料夹", evidence or "<p>尚无外部来源，不能视为已完成事实核实。</p>")
     if plan["changes"]:
         body += section("changes", "本版变化", ul(plan["changes"]))
-    footer = f'第 {esc(plan["revision"])} 版手帐 · 整理于 {esc(date_label(plan["generated_at"], show_tz))} · {esc(report["checked_on"])} 做过一轮格式检查。整理时间不等于各条信息的核实时间。'
+    author = public_text(plan.get("card", {}).get("author") or "杰纶hhh")
+    footer = (f'<span class="footer-credit">由 travel-planner 生成 · @{esc(author)}</span>'
+              f'第 {esc(plan["revision"])} 版手帐 · 整理于 {esc(date_label(plan["generated_at"], show_tz))} · {esc(report["checked_on"])} 做过一轮格式检查。整理时间不等于各条信息的核实时间。')
     template = (ROOT / "assets" / "travel-template.html").read_text(encoding="utf-8")
     # One-pass substitution keeps user content containing template syntax inert.
     tokens = {"TITLE": esc(plan["title"]), "NAV": nav, "BODY": body, "FOOTER": footer}
@@ -641,18 +704,361 @@ def write_new(path, content, force=False):
         f.write(content)
 
 
+PRIVATE_PATTERN = re.compile(
+    r"(?:1[3-9]\d{9}|\d{17}[\dXx]|(?:身份证|护照|订单号|票码|手机号|详细住址)\s*[:：]?\s*\S+)", re.I)
+
+
+def public_text(value):
+    """Keep the share outputs on an allowlist, with a second check on free text."""
+    return PRIVATE_PATTERN.sub("[私人信息已略]", str(value))
+
+
+def short(value, limit=36):
+    value = public_text(value).strip()
+    return value if len(value) <= limit else value[:limit - 1] + "…"
+
+
+def card_time(value):
+    return stamp(value).strftime("%m月%d日 %H:%M") if value else ""
+
+
+def money(cents):
+    return f'{Decimal(cents) / Decimal(100):.2f}'
+
+
+def card_cost(plan):
+    required = [cost_range(c) for c in plan["costs"] if not c["optional"]]
+    if not required:
+        return "待估算"
+    people = Decimal(plan["trip"]["travelers"])
+    low = sum((pair[0] for pair in required), Decimal(0)) / people
+    high = sum((pair[1] for pair in required), Decimal(0)) / people
+    suffix = "（已录入部分，费用未齐）" if not plan["budget"]["complete"] else ""
+    return f'{low:,.2f}–{high:,.2f} {plan["budget"]["currency"]}{suffix}'
+
+
+def aa_result(aa):
+    members = aa.get("members", [])
+    order = [member["id"] for member in members]
+    balances = {ident: 0 for ident in order}
+    planned = []
+    for expense in aa.get("expenses", []):
+        cents = int(Decimal(expense["amount"]) * 100)
+        participants = [ident for ident in order if ident in expense["participant_ids"]]
+        each, remainder = divmod(cents, len(participants))
+        shares = {ident: each + (index < remainder) for index, ident in enumerate(participants)}
+        if expense["status"] == "planned":
+            planned.append((expense["label"], cents, shares))
+            continue
+        balances[expense["payer_id"]] += cents
+        for ident, share in shares.items():
+            balances[ident] -= share
+
+    @lru_cache(None)
+    def settle(state):
+        first = next((index for index, amount in enumerate(state) if amount), None)
+        if first is None:
+            return ()
+        best = None
+        for other in range(first + 1, len(state)):
+            if state[first] * state[other] >= 0:
+                continue
+            amount = min(abs(state[first]), abs(state[other]))
+            payer, receiver = (first, other) if state[first] < 0 else (other, first)
+            updated = list(state)
+            updated[payer] += amount
+            updated[receiver] -= amount
+            candidate = ((order[payer], order[receiver], amount),) + settle(tuple(updated))
+            if best is None or (len(candidate), candidate) < (len(best), best):
+                best = candidate
+        return best or ()
+
+    transfers = settle(tuple(balances.values()))
+    return balances, planned, transfers
+
+
+def card_content(plan, report):
+    card = plan.get("card", {})
+    trip = plan["trip"]
+    start, end = trip["start_date"], trip["end_date"]
+    days = (day(end) - day(start)).days + 1 if start and end and day(end) >= day(start) else None
+    date_text = (f"{start}—{end}" if start and end else "日期待定") + (f" · {days} 天" if days else "")
+    status = report["effective_status"]
+    status_text = {"exploration": "草稿·还没定", "conditional": "条件性方案·待确认", "ready": "关键安排已落实"}[status]
+    meeting = card.get("meeting") or {}
+    meeting_text = " · ".join(x for x in (card_time(meeting.get("time")), meeting.get("place")) if x) or "集合时间与地点待定"
+    reminders = [public_text(x) for x in report["blockers"]]
+    if not reminders:
+        reminders = [public_text(r["trigger"] + "：" + r["action"]) for r in plan["risks"] if not r["resolved"]]
+    if not reminders:
+        reminders = ["出发前再次核对交通、预约与天气。"]
+    aa = card.get("aa") or {}
+    balances, planned, transfers = aa_result(aa)
+    names = {member["id"]: public_text(member["name"]) for member in aa.get("members", [])}
+    return {"destination": public_text(trip["destination"] or "目的地待定"),
+            "origin": public_text(trip["origin"] or "出发地待定"),
+            "date": date_text, "people": trip["travelers"], "status": status_text,
+            "demo": plan["is_demo"], "meeting": public_text(meeting_text),
+            "cost": card_cost(plan), "days": [(d["date"], public_text(d["summary"])) for d in sorted(plan["days"], key=lambda d: d["date"])],
+            "packing": [public_text(x) for x in card.get("packing", [])],
+            "reminders": reminders, "roles": card.get("roles", []),
+            "polls": card.get("polls", []), "names": names,
+            "balances": balances, "planned": planned, "transfers": transfers,
+            "aa_expenses": bool(aa.get("expenses")),
+            "aa_paid": any(x["status"] == "paid" for x in aa.get("expenses", [])),
+            "paid_expenses": [x for x in aa.get("expenses", []) if x["status"] == "paid"],
+            "currency": plan["budget"]["currency"],
+            "author": public_text(card.get("author") or "杰纶hhh")}
+
+
+def card_text(info):
+    lines = [f'🏕 {info["destination"]}搭子卡',
+             f'{info["origin"]}出发｜{info["date"]}｜{info["people"]} 人',
+             info["status"]]
+    if info["demo"]:
+        lines.append("演示数据 · 地点、价格与安排均为虚构")
+    lines.extend((f'集合：{info["meeting"]}', f'人均必需费用：{info["cost"]}', "", "行程"))
+    lines.extend(f'{date}  {summary}' for date, summary in info["days"])
+    if not info["days"]:
+        lines.append("行程待整理")
+    lines.extend(("", "必带物品：" + ("、".join(info["packing"]) if info["packing"] else "待整理"),
+                  "注意：" + "；".join(info["reminders"][:3])))
+    if info["polls"]:
+        lines.extend(("", "投票（在群里回复编号）"))
+        for i, poll in enumerate(info["polls"], 1):
+            lines.append(f'{chr(64 + i) if i <= 26 else i}. {public_text(poll["question"])}')
+            lines.extend(f'{chr(64 + i) if i <= 26 else i}{n} {public_text(option)}' for n, option in enumerate(poll["options"], 1))
+            if poll["deadline"]:
+                lines.append(f'截止：{card_time(poll["deadline"])}')
+    if info["roles"]:
+        lines.extend(("", "分工接龙（认领后写上名字）"))
+        lines.extend(f'{n}. {public_text(role["role"])} → {public_text(role["assignee"] or "待认领")}'
+                     for n, role in enumerate(info["roles"], 1))
+    if info["names"] and info["aa_expenses"]:
+        lines.extend(("", "AA · 已付款结算"))
+        for expense in info["paid_expenses"]:
+            members = "、".join(info["names"][ident] for ident in expense["participant_ids"])
+            payer = info["names"][expense["payer_id"]]
+            lines.append(f'{public_text(expense["label"])} {expense["amount"]} {info["currency"]} · {payer}垫付 · {members}分摊')
+        for ident, cents in info["balances"].items():
+            if cents:
+                lines.append(f'{info["names"][ident]} {"应收" if cents > 0 else "应付"} {money(abs(cents))} {info["currency"]}')
+        if info["transfers"]:
+            lines.append("建议转账：")
+            lines.extend(f'{info["names"][payer]} → {info["names"][receiver]} {money(cents)} {info["currency"]}'
+                         for payer, receiver, cents in info["transfers"])
+        elif not any(info["balances"].values()):
+            lines.append("已结清，无需转账" if info["aa_paid"] else "尚无已付款，无需转账")
+        if info["planned"]:
+            lines.append("计划支出（尚不结算）：")
+            for label, cents, shares in info["planned"]:
+                detail = "、".join(f'{info["names"][ident]} {money(share)}' for ident, share in shares.items())
+                lines.append(f'{public_text(label)} {money(cents)} {info["currency"]} · {detail} 分摊')
+    lines.extend(("", f'由 travel-planner 生成 · @{info["author"]}'))
+    return "\n".join(lines) + "\n"
+
+
+def render_card(plan, report):
+    if report["schema_errors"]:
+        raise ValueError("结构错误，拒绝生成搭子卡")
+    info = card_content(plan, report)
+    pages = []
+
+    def heading(title):
+        return f'<h2 class="section-title">{esc(title)}</h2>'
+
+    def row(label, value, style="line-row"):
+        return f'<div class="{style}"><b>{esc(label)}</b><span>{esc(short(value, 43))}</span></div>'
+
+    first_days = info["days"][:3]
+    overview = ('<div class="hero"><div class="eyebrow">TRAVEL COMPANION / 一起出发</div>'
+                f'<h1>{esc(short(info["destination"], 14))}</h1>'
+                f'<p class="subtitle">从 {esc(short(info["origin"], 30))} 出发，路上见。</p></div>'
+                '<div class="summary">'
+                f'<div class="stat"><small>旅行日期</small><strong>{esc(short(info["date"], 31))}</strong></div>'
+                f'<div class="stat"><small>同行人数</small><strong>{info["people"]} 人</strong></div>'
+                f'<div class="stat"><small>计划天数</small><strong>{len(info["days"])} 天日程</strong></div></div>'
+                f'<div class="status"><span class="star">✦</span>{esc(info["status"])}</div>'
+                f'<div class="meeting"><b>集合</b><span>{esc(short(info["meeting"], 45))}</span></div>'
+                f'<div class="cost"><b>人均必需费用</b><strong>{esc(info["cost"])}</strong></div>'
+                + heading("每天怎么走")
+                + ("".join(row(d, s, "day-row") for d, s in first_days) if first_days else '<p class="tiny">行程待整理</p>')
+                + heading("随身带上")
+                + '<div class="chips">'
+                + ("".join(f'<span class="chip">{esc(short(x, 15))}</span>' for x in info["packing"][:6])
+                   if info["packing"] else '<span class="tiny">必带物品待整理</span>')
+                + '</div>' + heading("出发前留意")
+                + "".join(f'<p class="reminder">{esc(short(x, 55))}</p>' for x in info["reminders"][:3]))
+    pages.append(overview)
+
+    # Subsequent sheets have a fixed content budget. Keep every row; shorten only
+    # its visual excerpt. The text edition carries full free-text content.
+    groups = []
+    if len(info["days"]) > 3:
+        groups.append(("行程续篇", [(row(d, s, "day-row"), 1) for d, s in info["days"][3:]]))
+    if info["polls"]:
+        entries = []
+        for i, poll in enumerate(info["polls"], 1):
+            prefix = chr(64 + i) if i <= 26 else str(i)
+            options = list(enumerate(poll["options"], 1))
+            for offset in range(0, len(options), 5):
+                subset = options[offset:offset + 5]
+                title = f'{prefix}. {public_text(poll["question"])}'
+                if offset:
+                    title += "（续）"
+                block = f'<div class="poll"><div class="poll-title">{esc(short(title, 39))}</div>'
+                block += "".join(f'<div class="poll-option"><b>{prefix}{n}</b>　{esc(short(option, 48))}</div>' for n, option in subset)
+                if poll["deadline"]:
+                    block += f'<div class="poll-deadline">截止 {esc(card_time(poll["deadline"]))}</div>'
+                entries.append((block + '</div>', 1 + len(subset)))
+        groups.append(("投票 · 在群里回复编号", entries))
+    if info["roles"]:
+        groups.append(("分工 · 等你认领", [
+            (row(role["role"], role["assignee"] or "待认领"), 1)
+            for role in info["roles"]]))
+    if info["names"] and info["aa_expenses"]:
+        entries = []
+        for expense in info["paid_expenses"]:
+            payer = info["names"][expense["payer_id"]]
+            entries.append((row("已付·" + public_text(expense["label"]), f'{expense["amount"]} {info["currency"]} · {payer}垫付'), 1))
+        for ident, cents in info["balances"].items():
+            if cents:
+                entries.append((row(info["names"][ident], f'{"应收" if cents > 0 else "应付"} {money(abs(cents))} {info["currency"]}'), 1))
+        for payer, receiver, cents in info["transfers"]:
+            entries.append((f'<div class="line-row transfer"><span>{esc(short(info["names"][payer], 15))} → {esc(short(info["names"][receiver], 15))}　{money(cents)} {esc(info["currency"])}</span></div>', 1))
+        if not info["transfers"] and not any(info["balances"].values()):
+            note = "已结清，无需转账" if info["aa_paid"] else "尚无已付款，无需转账"
+            entries.append((f'<div class="line-row"><span>{note}</span></div>', 1))
+        for label, cents, _ in info["planned"]:
+            entries.append((row("计划·未付款", f'{public_text(label)} {money(cents)} {info["currency"]}'), 1))
+        groups.append(("AA · 已付款才结算", entries))
+
+    secondary, used, active_group = [], 0, None
+    for title, entries in groups:
+        for block, units in entries:
+            if used + units + (1 if active_group != title else 0) > 19 and secondary:
+                pages.append('<div class="body-secondary">' + "".join(secondary) + '</div>')
+                secondary, used, active_group = [], 0, None
+            if active_group != title:
+                secondary.append(heading(title))
+                used += 1
+                active_group = title
+            secondary.append(block)
+            used += units
+    if secondary:
+        pages.append('<div class="body-secondary">' + "".join(secondary) + '</div>')
+
+    page_html = []
+    total = len(pages)
+    for number, body in enumerate(pages, 1):
+        demo = '<div class="demo">演示数据 · 请勿用于真实出行</div>' if info["demo"] else ""
+        page_html.append('<article class="sheet" id="page-' + str(number) + '">'
+                         '<div class="topline"><span class="stamp">搭子卡</span><span>一起走，慢慢玩</span></div>'
+                         + demo + body
+                         + f'<div class="sheet-foot"><span>完整信息见群聊文字版</span><strong>由 travel-planner 生成 · @{esc(info["author"])}</strong><span>{number:02d} / {total:02d}</span></div>'
+                         '</article>')
+    template = (ROOT / "assets" / "dazi-card-template.html").read_text(encoding="utf-8")
+    tokens = {"TITLE": esc(info["destination"]), "PAGES": "".join(page_html)}
+    html_page = re.sub(r"@@(TITLE|PAGES)@@", lambda match: tokens[match[1]], template)
+    return html_page, card_text(info), total
+
+
+def available_browser():
+    candidates = [shutil.which(name) for name in ("chrome", "chromium", "chromium-browser", "msedge", "google-chrome")]
+    candidates.extend((r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                       r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                       "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                       "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"))
+    return next((str(path) for path in candidates if path and Path(path).is_file()), None)
+
+
+def png_size(path):
+    with Path(path).open("rb") as stream:
+        header = stream.read(24)
+    if header[:8] != b"\x89PNG\r\n\x1a\n" or len(header) < 24:
+        raise ValueError("浏览器未生成有效 PNG")
+    return struct.unpack(">II", header[16:24])
+
+
+def screenshot_cards(browser, source, destinations):
+    with tempfile.TemporaryDirectory(prefix="travel-card-browser-") as profile:
+        with tempfile.TemporaryDirectory(prefix="travel-card-images-") as temp:
+            shots = []
+            for number, target in enumerate(destinations, 1):
+                shot = Path(temp) / f"card-{number:02d}.png"
+                command = [browser, "--headless", "--disable-gpu", "--no-first-run",
+                           "--disable-background-networking", "--disable-sync", "--hide-scrollbars",
+                           "--force-device-scale-factor=1", "--window-size=1080,1440",
+                           f"--user-data-dir={profile}", f"--screenshot={shot}",
+                           Path(source).resolve().as_uri() + f"#page-{number}"]
+                done = subprocess.run(command, capture_output=True, timeout=40)
+                if done.returncode or not shot.is_file():
+                    detail = done.stderr.decode("utf-8", "replace")[-300:]
+                    raise RuntimeError(f"浏览器出图失败（第 {number} 页）：{detail}")
+                if png_size(shot) != (1080, 1440):
+                    raise RuntimeError(f"浏览器图片尺寸异常：{png_size(shot)}；需要 1080×1440")
+                shots.append(shot)
+            for shot, target in zip(shots, destinations):
+                Path(target).parent.mkdir(parents=True, exist_ok=True)
+                os.replace(shot, target)
+
+
+def create_card(plan, report, output_dir, force=False):
+    html_page, txt, count = render_card(plan, report)
+    check = audit(html_page)
+    if not check["passed"]:
+        raise ValueError("搭子卡模板离线静态检查失败：" + "; ".join(check["issues"]))
+    folder = Path(output_dir)
+    source, text_file = folder / "dazi-card.html", folder / "dazi-card.txt"
+    destination = short(plan["trip"]["destination"] or "目的地待定", 18)
+    safe_name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "-", destination).strip(" .") or "目的地待定"
+    start = plan["trip"]["start_date"] or "日期待定"
+    images = [folder / f"搭子卡-{safe_name}-{start}-{n:02d}.png" for n in range(1, count + 1)]
+    targets = [source, text_file, *images]
+    if not force:
+        existing = next((path for path in targets if path.exists()), None)
+        if existing:
+            raise FileExistsError(17, "目标文件已存在", str(existing))
+    write_new(source, html_page, force)
+    write_new(text_file, txt, force)
+    browser = available_browser()
+    result = {"html": str(source.resolve()), "text": str(text_file.resolve()),
+              "images": [], "expected_images": [str(path.resolve()) for path in images]}
+    if not browser:
+        result["image_error"] = "未找到本机 Chrome/Edge；请由当前 Agent 的浏览器工具自动截图后交付 PNG。"
+        return result
+    try:
+        screenshot_cards(browser, source, images)
+        result["images"] = [str(path.resolve()) for path in images]
+        if force:
+            prefix = f"搭子卡-{safe_name}-{start}-"
+            retained = set(images)
+            for old in folder.iterdir():
+                if old.is_file() and old.name.startswith(prefix) and old.suffix == ".png" and old not in retained:
+                    old.unlink()
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+        result["image_error"] = str(exc)
+    return result
+
+
 def main():
+    # CLI JSON has a stable encoding even when Windows redirects a GBK stream.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="cmd", required=True)
-    for command in ("init", "check", "render", "audit"):
+    for command in ("init", "check", "render", "audit", "card"):
         p = commands.add_parser(command)
         p.add_argument("path")
-        if command in ("init", "render"):
+        if command in ("init", "render", "card"):
             p.add_argument("--force", action="store_true")
-        if command in ("check", "render"):
+        if command in ("check", "render", "card"):
             p.add_argument("--as-of", help="检查日期 YYYY-MM-DD，默认运行机器本地日期")
         if command == "render":
             p.add_argument("--out", required=True)
+        if command == "card":
+            p.add_argument("-o", "--out", required=True, help="搭子卡输出目录")
     args = parser.parse_args()
     try:
         if args.cmd == "init":
@@ -672,8 +1078,16 @@ def main():
                     raise ValueError("模板离线静态检查失败：" + "; ".join(check["issues"]))
                 write_new(args.out, output, args.force)
                 result["output"] = str(Path(args.out).resolve())
+            if args.cmd == "card" and not result["schema_errors"]:
+                result["card"] = create_card(plan, result, args.out, args.force)
+                if result["card"].get("image_error"):
+                    code = 2
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return code
+    except FileExistsError as exc:
+        message = f"目标文件已存在：{exc.filename}。请换一个文件名；确认需要覆盖时添加 --force。"
+        print(json.dumps({"error": message}, ensure_ascii=False), file=sys.stderr)
+        return 2
     except (ValueError, OSError, TypeError) as exc:
         print(json.dumps({"error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 2

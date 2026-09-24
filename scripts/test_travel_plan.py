@@ -2,9 +2,13 @@
 import copy
 from html.parser import HTMLParser
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import travel_plan as tp
 
 AS_OF = "2026-09-23"
@@ -58,7 +62,7 @@ class PlannerTests(unittest.TestCase):
         self.plan["costs"][0]["paid"] = 240
         total = self.report()["budget"]
         self.assertEqual(total["required_low"], 1070)
-        self.assertEqual(total["remaining_low"], 830)
+        self.assertEqual(total["remaining_low"], 728.99)
         self.plan["budget"].update(scope="remaining", limit=1150)
         self.assertEqual(self.report()["blockers"], [])
 
@@ -144,6 +148,53 @@ class PlannerTests(unittest.TestCase):
     def test_due_critical_source_needs_refresh(self):
         self.plan["sources"][0]["recheck_on"] = AS_OF
         self.assertTrue(any("需重新核实" in x for x in self.report()["blockers"]))
+
+    def test_source_issues_accumulate_without_duplicate_warning(self):
+        source = self.plan["sources"][0]
+        source.update(valid_from="2026-09-01", valid_to="2026-10-01",
+                      conflict="开放时间相互矛盾", recheck_on=AS_OF)
+        result = self.report()
+        self.assertEqual(result["schema_errors"], [])
+        for text in ("不适用于", "开放时间相互矛盾", "已到复核日期"):
+            self.assertTrue(any(text in issue for issue in result["blockers"]), text)
+        self.assertFalse(any("已到复核日期" in issue for issue in result["warnings"]))
+        unused = dict(source, id="s-unused")
+        self.plan["sources"].append(unused)
+        self.assertTrue(any("s-unused" in issue and "已到复核日期" in issue
+                            for issue in self.report()["warnings"]))
+
+    def test_decimal_cost_display_matches_single_cost_total(self):
+        for unit, quantity, expected in ((2.675, 1, "2.68"), (0.05, 0.9, "0.04")):
+            with self.subTest(unit=unit, quantity=quantity):
+                cost = dict(self.demo["costs"][0], unit_low=unit, unit_high=unit,
+                            quantity=quantity, paid=0, optional=False)
+                self.plan["costs"] = [cost]
+                result = self.report()
+                self.assertEqual(result["budget"]["required_low"], float(expected))
+                rendered = tp.render(self.plan, result)
+                self.assertIn(f'class="amount">{expected}–{expected} CNY', rendered)
+                self.assertIn(f'<strong>{expected}–{expected}</strong>', rendered)
+
+    def test_cli_utf8_pipes_and_existing_file_recovery(self):
+        env = dict(os.environ, PYTHONIOENCODING="gbk", PYTHONUTF8="0")
+        command = [sys.executable, "-B", str(tp.ROOT / "scripts" / "travel_plan.py")]
+        with tempfile.TemporaryDirectory(prefix="travel-中文-") as folder:
+            path = Path(folder) / "行程.json"
+            created = subprocess.run(command + ["init", str(path)], env=env, capture_output=True)
+            self.assertEqual(created.returncode, 0, created.stderr)
+            self.assertEqual(json.loads(created.stdout.decode("utf-8"))["created"], str(path.resolve()))
+            original = path.read_bytes()
+            duplicate = subprocess.run(command + ["init", str(path)], env=env, capture_output=True)
+            self.assertEqual(duplicate.returncode, 2)
+            error = json.loads(duplicate.stderr.decode("utf-8"))["error"]
+            self.assertIn("目标文件已存在", error)
+            self.assertIn("--force", error)
+            self.assertEqual(path.read_bytes(), original)
+            checked = subprocess.run(command + ["check", str(path)], env=env, capture_output=True)
+            self.assertEqual(checked.returncode, 1)
+            self.assertTrue(json.loads(checked.stdout.decode("utf-8"))["blockers"])
+            forced = subprocess.run(command + ["init", str(path), "--force"], env=env, capture_output=True)
+            self.assertEqual(forced.returncode, 0, forced.stderr)
 
     def test_no_destination_is_exploration(self):
         self.plan = tp.blank()
@@ -235,6 +286,106 @@ class PlannerTests(unittest.TestCase):
             self.assertEqual(tp.read_json(path), self.demo)
             with self.assertRaises(FileExistsError):
                 tp.write_new(path, "{}")
+
+    def test_card_optional_sections_and_status(self):
+        self.plan.pop("card")
+        self.plan["status"] = "exploration"
+        report = self.report()
+        self.assertEqual(report["schema_errors"], [])
+        page, message, count = tp.render_card(self.plan, report)
+        self.assertEqual(count, 1)
+        self.assertIn("草稿·还没定", page)
+        self.assertIn("草稿·还没定", message)
+        for absent in ("投票 · 在群里回复编号", "分工 · 等你认领", "AA · 已付款才结算"):
+            self.assertNotIn(absent, page)
+        self.assertIn("@杰纶hhh", page)
+
+    def test_card_aa_remainder_and_planned_expense(self):
+        aa = self.plan["card"]["aa"]
+        aa["members"] = [{"id": ident, "name": ident} for ident in "abc"]
+        aa["expenses"] = [
+            {"label": "车费", "amount": "1.01", "status": "paid", "payer_id": "a", "participant_ids": ["a", "b", "c"]},
+            {"label": "计划晚餐", "amount": "9.00", "status": "planned", "payer_id": None, "participant_ids": ["a", "b", "c"]},
+        ]
+        self.assertEqual(self.report()["schema_errors"], [])
+        balances, planned, transfers = tp.aa_result(aa)
+        self.assertEqual(balances, {"a": 67, "b": -34, "c": -33})
+        self.assertEqual(planned[0][2], {"a": 300, "b": 300, "c": 300})
+        self.assertEqual(transfers, (("b", "a", 34), ("c", "a", 33)))
+        _, message, _ = tp.render_card(self.plan, self.report())
+        self.assertIn("b → a 0.34 CNY", message)
+        self.assertIn("计划支出（尚不结算）", message)
+        self.assertNotIn("9.00 CNY\n建议转账", message)
+
+    def test_card_aa_finds_fewer_transfers_than_first_match(self):
+        aa = {"members": [{"id": ident, "name": ident} for ident in "abcd"], "expenses": [
+            {"label": "一", "amount": "0.05", "status": "paid", "payer_id": "d", "participant_ids": ["a"]},
+            {"label": "二", "amount": "0.04", "status": "paid", "payer_id": "c", "participant_ids": ["b"]},
+        ]}
+        balances, _, transfers = tp.aa_result(aa)
+        self.assertEqual(balances, {"a": -5, "b": -4, "c": 4, "d": 5})
+        self.assertEqual(len(transfers), 2)
+        self.assertEqual(set(transfers), {("a", "d", 5), ("b", "c", 4)})
+
+    def test_card_rejects_bad_optional_fields(self):
+        examples = [
+            {"aa": {"members": [], "expenses": [{"label": "x", "amount": "NaN", "status": "paid", "payer_id": "missing", "participant_ids": []}]}},
+            {"polls": [{"question": "选哪个？", "options": ["只有一个"], "deadline": None}]},
+            {"roles": [{"role": "", "assignee": None}]},
+            {"meeting": {"time": "09:00", "place": "车站"}},
+            {"phone_number": "13800138000"},
+        ]
+        for card in examples:
+            with self.subTest(card=card):
+                self.plan["card"] = card
+                self.assertTrue(self.report()["schema_errors"])
+
+    def test_card_does_not_export_private_plan_fields(self):
+        secret = "13800138000"
+        self.plan["bookings"][0]["confirmed_evidence"] = secret
+        self.plan["places"][0]["address"] = "私人住址 " + secret
+        self.plan["days"][0]["summary"] += " 手机号：" + secret
+        self.plan["sources"][0]["summary"] = "订单号：ABC123"
+        page, message, _ = tp.render_card(self.plan, self.report())
+        for value in (secret, "ABC123", "私人住址"):
+            self.assertNotIn(value, page + message)
+
+    def test_card_long_trip_adds_pages_and_keeps_all_days_in_text(self):
+        for number in range(4, 16):
+            self.plan["days"].append({"date": f"2026-10-{number:02d}", "summary": f"第 {number} 天慢游", "intensity": "轻松",
+                                      "intensity_basis": "演示", "items": [], "alternatives": []})
+        page, message, count = tp.render_card(self.plan, self.report())
+        self.assertGreater(count, 2)
+        self.assertEqual(page.count('class="sheet"'), count)
+        self.assertIn("2026-10-15  第 15 天慢游", message)
+
+    def test_card_cli_generates_png_and_respects_existing_files(self):
+        if not tp.available_browser():
+            self.skipTest("此环境未安装可用于出图的 Chrome/Edge")
+        command = [sys.executable, "-B", str(tp.ROOT / "scripts" / "travel_plan.py")]
+        with tempfile.TemporaryDirectory(prefix="搭子卡-") as folder:
+            output = Path(folder) / "out"
+            first = subprocess.run(command + ["card", str(tp.ROOT / "assets" / "demo-plan.json"), "-o", str(output),
+                                              "--as-of", AS_OF], capture_output=True)
+            self.assertEqual(first.returncode, 1, first.stderr.decode("utf-8", "replace"))
+            card = json.loads(first.stdout.decode("utf-8"))["card"]
+            self.assertEqual(len(card["images"]), 2)
+            self.assertTrue(Path(card["text"]).is_file())
+            self.assertTrue(Path(card["html"]).is_file())
+            for picture in card["images"]:
+                self.assertEqual(tp.png_size(picture), (1080, 1440))
+            again = subprocess.run(command + ["card", str(tp.ROOT / "assets" / "demo-plan.json"), "-o", str(output),
+                                              "--as-of", AS_OF], capture_output=True)
+            self.assertEqual(again.returncode, 2)
+            self.assertIn("--force", again.stderr.decode("utf-8"))
+
+    def test_card_reports_missing_browser_without_claiming_png(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(tp, "available_browser", return_value=None):
+            result = tp.create_card(self.demo, tp.validate(self.demo, AS_OF), folder)
+            self.assertEqual(result["images"], [])
+            self.assertIn("image_error", result)
+            self.assertTrue(Path(result["text"]).is_file())
+            self.assertTrue(Path(result["html"]).is_file())
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 ---
 name: travel-planner
-description: 从模糊出行想法推荐目的地，规划或调整可核实的旅行路线、预算及预约待办，并生成手机离线攻略；适用于旅行规划、出发前复核和已有行程导出。
+description: 从模糊出行想法规划或调整可核实的旅行路线、费用及预约待办，生成手机离线攻略或发给同行者的搭子卡；适用于旅行规划、出发前复核、离线导出和群聊分享。
 ---
 
 # 旅行规划
@@ -18,6 +18,7 @@ description: 从模糊出行想法推荐目的地，规划或调整可核实的�
 - 跨境、自驾、亲子、无障碍或高海拔确实影响本次行程：只读 [special-cases.md](references/special-cases.md) 对应部分。
 - 详细计划需要保存或导出：读 [data-contract.md](references/data-contract.md)，维护单一 `plan.json`。
 - 生成/检查手机文件：读 [delivery.md](references/delivery.md)。
+- 用户说“做个搭子卡”“发给朋友”“发群里”“分享给同行的人”：读 [data-contract.md](references/data-contract.md) 的搭子卡字段和 [delivery.md](references/delivery.md) 的出图验收。
 
 ## 不可省略的决策规则
 
@@ -47,9 +48,12 @@ python <skill>/scripts/travel_plan.py init <work>/plan.json
 python <skill>/scripts/travel_plan.py check <work>/plan.json --as-of YYYY-MM-DD
 python <skill>/scripts/travel_plan.py render <work>/plan.json --out <work>/travel-plan.html
 python <skill>/scripts/travel_plan.py audit <work>/travel-plan.html
+python <skill>/scripts/travel_plan.py card <work>/plan.json -o <work>/dazi-card
 ```
 
 `init` 生成待填骨架，不是旅行方案。schema 错误禁止导出；可行性阻断项允许导出带醒目问题清单的条件性草案，脚本不能把它升级为就绪状态。`check` 的通过只表示已实现的机械检查通过，真实营业、路线合理性、来源质量和实际订单仍需审查。
+
+搭子卡复用同一份 `plan.json`。对话里已经提到的集合、物品、分工、AA 和投票填入 `card`；没有提到的社交模块不追问、不生成。调用 `card` 后检查 `card.images` 是否包含完整 PNG 路径，逐张核对尺寸与内容，再交付图片和 `dazi-card.txt`。脚本会优先使用本机已安装的 Chrome/Edge 自动截图；若报告 `image_error`，用当前可用的浏览器工具完成截图，不能把中间 HTML 当成图片交付。图片和文字仅整理群聊信息，不自动发群。
 
 ## 交付
 

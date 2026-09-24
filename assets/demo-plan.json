@@ -320,7 +320,7 @@
       "unit_high": 80,
       "quantity": 4,
       "unit": "人天",
-      "paid": 0,
+      "paid": 101.01,
       "optional": false,
       "kind": "estimate",
       "basis": "含早餐与正餐",
@@ -416,5 +416,52 @@
   "emergency": [],
   "changes": [
     "模拟演示：测试排版、预算计算、预约阻断与离线功能。"
-  ]
+  ],
+  "card": {
+    "author": "杰纶hhh",
+    "meeting": {
+      "time": "2026-10-02T09:10:00+08:00",
+      "place": "示例出发城站南广场（虚构）"
+    },
+    "packing": ["证件", "充电宝", "雨具", "常用药", "舒适的鞋", "水杯"],
+    "roles": [
+      {"role": "确认展馆预约", "assignee": "小杰"},
+      {"role": "带常用药", "assignee": null},
+      {"role": "拍照记录", "assignee": "小纶"}
+    ],
+    "polls": [
+      {
+        "question": "第一晚吃什么？",
+        "options": ["河边小馆", "住处附近随意找", "先回酒店休息再决定"],
+        "deadline": "2026-10-01T20:00:00+08:00"
+      },
+      {
+        "question": "第二天展馆约不到怎么办？",
+        "options": ["改成住宿区自由活动", "提前取行李返程"],
+        "deadline": null
+      }
+    ],
+    "aa": {
+      "members": [
+        {"id": "jay", "name": "小杰"},
+        {"id": "lun", "name": "小纶"}
+      ],
+      "expenses": [
+        {
+          "label": "餐饮垫付（已计入餐饮费用）",
+          "amount": "101.01",
+          "status": "paid",
+          "payer_id": "jay",
+          "participant_ids": ["jay", "lun"]
+        },
+        {
+          "label": "晚餐计划",
+          "amount": "120.00",
+          "status": "planned",
+          "payer_id": null,
+          "participant_ids": ["jay", "lun"]
+        }
+      ]
+    }
+  }
 }

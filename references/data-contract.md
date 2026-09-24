@@ -1,6 +1,6 @@
 # 行程数据契约 v1
 
-机器契约是 scripts/travel_plan.py 中的 SCHEMA，完整实例为 [demo-plan.json](../assets/demo-plan.json)。所有字段必填；无记录用空数组，允许未知的日期/引用/预算上限用 null。未知字段会被拒绝，防止悄悄丢失信息或夹带完整订单个人资料。金额、数量、分钟数限制在 0 至 10 亿；拒绝 NaN/Infinity 及明显超出旅行场景的数值。
+机器契约是 scripts/travel_plan.py 中的 SCHEMA，完整实例为 [demo-plan.json](../assets/demo-plan.json)。基础行程字段全部必填；搭子卡的 `card` 及其内部字段可选。基础数据无记录用空数组，允许未知的日期/引用/预算上限用 null。未知字段会被拒绝，防止悄悄丢失信息或夹带完整订单个人资料。金额、数量、分钟数限制在 0 至 10 亿；拒绝 NaN/Infinity 及明显超出旅行场景的数值。
 
 init 生成顶层骨架。先采集与决策，再填写数据；不能为了通过校验给未知字段造值。探索阶段不必录入所有候选的完整数据。
 
@@ -17,6 +17,7 @@ init 生成顶层骨架。先采集与决策，再填写数据；不能为了通
 | constraints | id/text/kind(hard或preference)/status(satisfied、violated、unknown)/evidence |
 | assumptions/changes | 字符串数组，保存假设及本版变化 |
 | sources/places/bookings/days/costs/tasks/risks/emergency | 见下文 |
+| card | 可选搭子卡分享信息；见下文“搭子卡可选字段” |
 
 ID 全局唯一，字母开头，余下只用字母、数字、下划线和连字符。日期为 YYYY-MM-DD。具体时刻如 2026-10-02T09:00:00+08:00；不能用无日期的 09:00 或无时区时间。跨时区活动起终点各带当地 offset，脚本以实际时间比较。timezone 作为阅读说明，不代替事件 offset。
 
@@ -77,3 +78,20 @@ emergency 字段：label/contact/basis/source_ids；只保存相关、核实的�
 ## 校验边界
 
 脚本检查类型、引用、日期、窗口、重叠、时间槽、显式硬约束、关键依赖、来源适用期和预算。它不理解“太累”、不查询真实票价、不会发现未录入的闭馆日。check 不是独立事实核验。必须按 planning/evidence/delivery 完成人工语义审查。
+
+## 搭子卡可选字段
+
+顶层可增加 `card` 对象；缺省时旧版 plan 仍有效，搭子卡显示行程已有信息与待整理提示。`card` 内各字段也可单独省略。字段出现时严格校验类型与子字段，未知字段拒绝。`schema_version` 保持 1。
+
+| 字段 | 结构与用途 |
+| --- | --- |
+| `author` | 字符串；缺省使用“杰纶hhh”，搭子卡底部和旅行手帐页脚均署名“由 travel-planner 生成 · @杰纶hhh” |
+| `meeting` | `{time, place}`；`time` 为带时区的 ISO 时间或 null，`place` 为适合群内公开的集合地点 |
+| `packing` | 非空物品名称数组；图片最多展示 6 项，文字版保留全部 |
+| `roles` | `{role, assignee}` 数组；`assignee` 为名字或 null，null 显示“待认领” |
+| `polls` | `{question, options, deadline}` 数组；至少两个非空选项，`deadline` 为带时区时间或 null |
+| `aa` | `{members, expenses}`；成员为 `{id, name}`，支出为 `{label, amount, status, payer_id, participant_ids}` |
+
+AA 的 `amount` 是当前 `budget.currency` 的金额字符串，必须大于零且最多两位小数，例如 `"101.01"`。`status` 为 `planned` 或 `paid`；已付款必须有有效 `payer_id`，计划支出可以为 null。`participant_ids` 非空、无重复且必须引用成员 ID；同一笔支出在这些人之间等额分摊。除不尽的分按 `members` 顺序分配，因此结果始终精确到分并与原金额相等。只有 `paid` 进入净额和转账方案；`planned` 单列为尚未结算。这里的 AA 不增加或抵扣 `costs` 中的旅行费用，避免重复统计。
+
+搭子卡出图只读取旅行摘要和上述分享字段，不读取预约确认依据、证件、联系方式或具体住宿地址。输入自然语言时先判断字段是否适合公开；自动筛查只是辅助，交付前仍要查看实际图片和文字。没有对应数据时，投票、分工、AA 模块均不出现。
