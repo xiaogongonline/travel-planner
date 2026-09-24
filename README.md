@@ -6,6 +6,10 @@
 
 > 截图和 `assets/demo-plan.json` 使用虚构地点、价格与订单，仅用于展示效果，不能作为真实出行依据。
 
+## 灵感与致谢
+
+开发这个 Skill 时，我受到了 [不一书旅行规划（bys-travel-plan）](https://github.com/qkgecn93/bys-travel-plan) 的对话式旅行规划思路，以及 [travel-plan-viz](https://github.com/zexuanw958-svg/travel-plan-viz) 将行程做成手机优先、可离线阅读网页的方式的启发。感谢两个项目的作者公开分享作品。
+
 ## 接入 Codex、WorkBuddy、豆包工作和 TraeCode
 
 这个 Skill 是一个包含 `SKILL.md`、`references/`、`scripts/` 和 `assets/` 的文件夹。安装时要保留整个文件夹；只导入 `SKILL.md`，旅行手帐的模板和导出脚本就无法使用。导出 HTML 需要本机可运行 `python`（Python 3）；只讨论旅行方向时不需要运行脚本。
