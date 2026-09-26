@@ -97,20 +97,27 @@ python scripts/travel_plan.py audit <work>/travel-plan.html
 
 ## 做一张搭子卡
 
-行程有了方向后，可以说“做个搭子卡发群里”。Skill 会把每天的安排、集合、必带物品和人均必需费用整理成图片；对话里已有分工、投票或 AA 数据时才显示对应模块。图片太满会自动分成多张，另有可直接粘贴到微信群的文字版。卡片不发送消息，群友通过回复编号和接龙互动。
+可以说：“给我和女朋友做一张搭子卡，先推荐写哪些内容。”AI 会结合这次旅行推荐一份简短组合，你可以增删，也可以直接说想写什么。栏目和标题没有固定格式；不默认塞入集合、费用、投票、AA，也不因情侣关系自动写浪漫文案。
 
-![搭子卡演示预览](docs/dazi-card-preview.png)
-![搭子卡演示预览：投票、分工和 AA](docs/dazi-card-preview-02.png)
+先看完整文字稿，确认后才按内容设计图片。默认一张，不自动附赠群聊文字版。想只发文字时说明即可，同样先审稿。只改配色和排版不用重复审文字；内容变化会重新展示。内容太多先调整排版，再一起精简，不截字、不自动加页。Skill 不自动发送消息。
 
-演示图片使用虚构地点与支出。底部署名为“由 travel-planner 生成 · @杰纶hhh”。
+同样的生成流程，可以得到不同的表达和布局。以下均为虚构示例：
 
-本地命令：
+![双人旅行卡：把周末留给河边](docs/dazi-card-duo.png)
+![朋友出游卡：先碰头，再慢慢玩](docs/dazi-card-friends.png)
+
+本地命令（在 `plan.json` 的 `card.draft` 中保存完整文案）：
 
 ```text
+# 只保存审核稿
 python scripts/travel_plan.py card <work>/plan.json -o <work>/dazi-card
+# 用户确认文案后，用本次独立设计出图
+python scripts/travel_plan.py card <work>/plan.json -o <work>/dazi-card --format image --approved --html <work>/design.html
+# 只有需要分享文字时才执行
+python scripts/travel_plan.py card <work>/plan.json -o <work>/dazi-card --format text --approved
 ```
 
-脚本使用 Python 3 标准库，并调用机器上已有的 Chrome 或 Edge 自动生成 1080×1440 PNG。用户不用打开网页或点保存；`dazi-card.txt` 是群聊文字版，`dazi-card.html` 是内部排版与离线预览文件。没有本机浏览器时，支持浏览器工具的 Agent 可以接着自动截图；若都不可用，应如实报告图片未生成。正式行程请先核对卡片上的公开内容，再分享给同行者。CLI 默认不覆盖，明确加 `--force` 才覆盖。
+出图使用 Python 3 标准库与本机 Chrome/Edge，生成 1080×1440 PNG。设计文件自包含，文字必须与审核稿一致；具体结构见 [交付说明](references/delivery.md)。没有本机浏览器时，Agent 可用已有浏览器工具继续截图，否则如实报告未完成。CLI 默认不覆盖；明确覆盖时加 `--force`。旧 `card.sections` 与固定模板继续兼容，但不限制新卡片的表达。旅行手帐的数据和流程保持不变。
 
 ## 能力边界
 

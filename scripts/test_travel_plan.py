@@ -297,11 +297,12 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(count, 1)
         self.assertIn("草稿·还没定", page)
         self.assertIn("草稿·还没定", message)
-        for absent in ("投票 · 在群里回复编号", "分工 · 等你认领", "AA · 已付款才结算"):
-            self.assertNotIn(absent, page)
+        for absent in ("每天怎么走", "集合时间与地点待定", "必带物品待整理", "人均必需费用", "分工", "AA · 已付款才结算", "群聊"):
+            self.assertNotIn(absent, page + message)
         self.assertIn("@杰纶hhh", page)
 
     def test_card_aa_remainder_and_planned_expense(self):
+        self.plan["card"]["sections"] = ["aa"]
         aa = self.plan["card"]["aa"]
         aa["members"] = [{"id": ident, "name": ident} for ident in "abc"]
         aa["expenses"] = [
@@ -332,6 +333,8 @@ class PlannerTests(unittest.TestCase):
 
     def test_card_rejects_bad_optional_fields(self):
         examples = [
+            {"sections": ["unknown"]},
+            {"sections": "days"},
             {"aa": {"members": [], "expenses": [{"label": "x", "amount": "NaN", "status": "paid", "payer_id": "missing", "participant_ids": []}]}},
             {"polls": [{"question": "选哪个？", "options": ["只有一个"], "deadline": None}]},
             {"roles": [{"role": "", "assignee": None}]},
@@ -369,26 +372,176 @@ class PlannerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="搭子卡-") as folder:
             output = Path(folder) / "out"
             first = subprocess.run(command + ["card", str(tp.ROOT / "assets" / "demo-plan.json"), "-o", str(output),
-                                              "--as-of", AS_OF], capture_output=True)
+                                              "--as-of", AS_OF, "--format", "image", "--approved"], capture_output=True)
             self.assertEqual(first.returncode, 1, first.stderr.decode("utf-8", "replace"))
             card = json.loads(first.stdout.decode("utf-8"))["card"]
-            self.assertEqual(len(card["images"]), 2)
-            self.assertTrue(Path(card["text"]).is_file())
+            self.assertEqual(len(card["images"]), 1)
+            self.assertNotIn("text", card)
+            self.assertFalse((output / "dazi-card.txt").exists())
             self.assertTrue(Path(card["html"]).is_file())
             for picture in card["images"]:
                 self.assertEqual(tp.png_size(picture), (1080, 1440))
             again = subprocess.run(command + ["card", str(tp.ROOT / "assets" / "demo-plan.json"), "-o", str(output),
-                                              "--as-of", AS_OF], capture_output=True)
+                                              "--as-of", AS_OF, "--format", "image", "--approved"], capture_output=True)
             self.assertEqual(again.returncode, 2)
             self.assertIn("--force", again.stderr.decode("utf-8"))
 
     def test_card_reports_missing_browser_without_claiming_png(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(tp, "available_browser", return_value=None):
-            result = tp.create_card(self.demo, tp.validate(self.demo, AS_OF), folder)
+            result = tp.create_card(self.demo, tp.validate(self.demo, AS_OF), folder, output_format="image", approved=True)
             self.assertEqual(result["images"], [])
             self.assertIn("image_error", result)
-            self.assertTrue(Path(result["text"]).is_file())
+            self.assertNotIn("text", result)
             self.assertTrue(Path(result["html"]).is_file())
+
+    def test_card_default_is_draft_without_browser_or_extra_files(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(tp, "available_browser") as browser:
+            result = tp.create_card(self.plan, self.report(), folder)
+            browser.assert_not_called()
+            self.assertEqual(result["stage"], "draft")
+            self.assertEqual([p.name for p in Path(folder).iterdir()], ["card-draft.txt"])
+            draft = Path(result["text"]).read_text(encoding="utf-8")
+            self.assertIn(self.plan["days"][0]["summary"], draft)
+            for omitted in (self.plan["card"]["meeting"]["place"], "常用药", "投票", "分工", "AA", "群聊"):
+                self.assertNotIn(omitted, draft)
+
+    def test_card_requires_selection_and_review_before_export(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(tp, "available_browser") as browser:
+            for output_format in ("image", "text"):
+                with self.assertRaisesRegex(ValueError, "文字草稿"):
+                    tp.create_card(self.plan, self.report(), folder, output_format=output_format)
+            self.plan["card"].pop("sections")
+            with self.assertRaisesRegex(ValueError, "card.sections"):
+                tp.create_card(self.plan, self.report(), folder)
+            self.assertEqual(list(Path(folder).iterdir()), [])
+            browser.assert_not_called()
+
+    def test_card_text_export_is_separate_and_matches_review_content(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(tp, "available_browser") as browser:
+            draft = tp.create_card(self.plan, self.report(), folder)
+            result = tp.create_card(self.plan, self.report(), folder, output_format="text", approved=True)
+            browser.assert_not_called()
+            expected = Path(draft["text"]).read_text(encoding="utf-8").split("\n\n", 1)[1]
+            self.assertEqual(Path(result["text"]).read_text(encoding="utf-8"), expected)
+            self.assertEqual({p.name for p in Path(folder).iterdir()}, {"card-draft.txt", "dazi-card.txt"})
+
+    def test_card_does_not_silently_add_pages(self):
+        self.plan["card"]["sections"] = list(tp.CARD_SECTIONS)
+        with tempfile.TemporaryDirectory() as folder, patch.object(tp, "available_browser", return_value=None):
+            with self.assertRaisesRegex(ValueError, "多张|张卡片"):
+                tp.create_card(self.plan, self.report(), folder, output_format="image", approved=True)
+            self.assertEqual(list(Path(folder).iterdir()), [])
+            result = tp.create_card(self.plan, self.report(), folder, output_format="image", approved=True, allow_multiple=True)
+            self.assertGreater(len(result["expected_images"]), 1)
+
+    def test_two_people_can_explicitly_choose_aa_without_group_language(self):
+        self.plan["card"]["sections"] = ["aa"]
+        page, draft, count = tp.render_card(self.plan, self.report())
+        self.assertIn("建议转账", draft)
+        self.assertEqual(count, 1)
+        for omitted in ("群里", "群聊", "接龙", "集合", "每天怎么走"):
+            self.assertNotIn(omitted, page + draft)
+
+    def test_free_draft_wins_and_text_preserves_exact_copy(self):
+        examples = tp.read_json(tp.ROOT / "assets/card-examples/copy.json")
+        examples["custom"] = {"draft": "这次不赶路\n只想一起去看看海。\n日期等我们商量好再写。"}
+        for name, card in examples.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as folder, patch.object(tp, "available_browser") as browser:
+                self.plan["card"].update(card)  # Existing AA, packing, etc. must not leak.
+                if name == "friends":
+                    self.plan["trip"]["travelers"] = 4
+                report = self.report()
+                self.assertEqual(report["schema_errors"], [])
+                result = tp.create_card(self.plan, report, folder)
+                self.assertEqual(Path(result["text"]).read_text(encoding="utf-8"), "搭子卡文字草稿 · 待审核\n\n" + card["draft"])
+                for form in ("image", "text"):
+                    with self.assertRaisesRegex(ValueError, "文字草稿"):
+                        tp.create_card(self.plan, report, folder, output_format=form)
+                result = tp.create_card(self.plan, report, folder, output_format="text", approved=True)
+                self.assertEqual(Path(result["text"]).read_text(encoding="utf-8"), card["draft"])
+                self.assertEqual({p.name for p in Path(folder).iterdir()}, {"card-draft.txt", "dazi-card.txt"})
+                browser.assert_not_called()
+
+    def test_free_draft_invalid_does_not_fall_back(self):
+        for bad in ("", " \n\t", None, ["文案"]):
+            with self.subTest(bad=bad):
+                self.plan["card"]["draft"] = bad
+                self.assertTrue(self.report()["schema_errors"])
+
+    def test_free_draft_requires_design_and_rejects_misused_html(self):
+        self.plan["card"] = {"draft": "我们的周末"}
+        with tempfile.TemporaryDirectory() as folder, patch.object(tp, "available_browser") as browser:
+            with self.assertRaisesRegex(ValueError, "--html"):
+                tp.create_card(self.plan, self.report(), folder, output_format="image", approved=True)
+            with self.assertRaisesRegex(ValueError, "仅用于"):
+                tp.create_card(self.plan, self.report(), folder, design_html="absent.html")
+            self.plan["card"].pop("draft")
+            self.plan["card"]["sections"] = []
+            with self.assertRaisesRegex(ValueError, "仅用于"):
+                tp.create_card(self.plan, self.report(), folder, output_format="image", approved=True, design_html="absent.html")
+            browser.assert_not_called()
+            self.assertEqual(list(Path(folder).iterdir()), [])
+
+    def test_authored_design_rejects_changed_missing_or_extra_copy(self):
+        self.plan["card"] = {"draft": "我们的周末\n待确认：酒店。"}
+        design = ('<!doctype html><html><head><title>卡片</title></head><body>'
+                  '<article class="sheet" id="page-1"><h1>我们的周末</h1><p>待确认：酒店。</p>'
+                  '<footer data-card-credit>由 travel-planner 生成 · @杰纶hhh</footer></article></body></html>')
+        output, count = tp.prepare_card_design(design, self.plan)
+        self.assertEqual(count, 1)
+        self.assertTrue(tp.audit(output)["passed"])
+        for changed in (design.replace("待确认：酒店。", "酒店已确定。"),
+                        design.replace("<p>待确认：酒店。</p>", ""),
+                        design.replace("</article>", "<p>自动添加预算</p></article>")):
+            with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, "文案"):
+                tp.prepare_card_design(changed, self.plan)
+        for broken in (design.replace('id="page-1"', 'id="page-3"'),
+                       design.replace("</body>", "<script>console.log(1)</script></body>"),
+                       design.replace("</head>", '<link rel="stylesheet" href="https://example.com/style.css"></head>'),
+                       design.replace("</article>", '<img src="./photo.png"></article>'),
+                       design.replace("@杰纶hhh", "@杰纶hhh加点内容"),
+                       design.replace("</body>", "卡外多余文字</body>"),
+                       design + "卡外多余文字",
+                       design.replace("<body>", "卡外多余文字<body>"),
+                       design.replace("</p>", "")):
+            with self.subTest(broken=broken), self.assertRaises(ValueError):
+                tp.prepare_card_design(broken, self.plan)
+
+    def test_authored_multiple_pages_need_explicit_choice(self):
+        self.plan["card"] = {"draft": "第一天\n第二天"}
+        sheets = ''.join(f'<article class="sheet" id="page-{i}"><p>{txt}</p>'
+                         '<footer data-card-credit>由 travel-planner 生成 · @杰纶hhh</footer></article>'
+                         for i, txt in enumerate(("第一天", "第二天"), 1))
+        with tempfile.TemporaryDirectory() as folder, patch.object(tp, "available_browser", return_value=None):
+            design = Path(folder) / "design.html"
+            design.write_text('<html><head></head><body>' + sheets + '</body></html>', encoding="utf-8")
+            target = Path(folder) / "out"
+            with self.assertRaisesRegex(ValueError, "张卡片"):
+                tp.create_card(self.plan, self.report(), target, output_format="image", approved=True, design_html=design)
+            self.assertFalse(target.exists())
+            result = tp.create_card(self.plan, self.report(), target, output_format="image", approved=True, design_html=design, allow_multiple=True)
+            self.assertEqual(len(result["expected_images"]), 2)
+            self.assertNotIn("text", result)
+
+    def test_authored_examples_cli_generate_images_without_text(self):
+        if not tp.available_browser():
+            self.skipTest("此环境未安装可用于出图的 Chrome/Edge")
+        examples = tp.read_json(tp.ROOT / "assets/card-examples/copy.json")
+        for name, card in examples.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as folder:
+                self.plan["card"] = card
+                plan_path = Path(folder) / "plan.json"
+                tp.write_new(plan_path, json.dumps(self.plan, ensure_ascii=False))
+                command = [sys.executable, "-B", str(tp.ROOT / "scripts/travel_plan.py"), "card", str(plan_path),
+                           "-o", str(Path(folder) / "out"), "--format", "image", "--approved", "--as-of", AS_OF,
+                           "--html", str(tp.ROOT / f"assets/card-examples/{name}.html")]
+                done = subprocess.run(command, capture_output=True)
+                self.assertIn(done.returncode, (0, 1), done.stderr.decode("utf-8", "replace"))
+                result = json.loads(done.stdout.decode("utf-8"))["card"]
+                self.assertEqual(len(result["images"]), 1)
+                self.assertNotIn("text", result)
+                self.assertEqual(tp.png_size(result["images"][0]), (1080, 1440))
+                self.assertEqual({p.suffix for p in (Path(folder) / "out").iterdir()}, {".png", ".html"})
 
 
 if __name__ == "__main__":

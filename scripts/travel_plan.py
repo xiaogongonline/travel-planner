@@ -44,7 +44,10 @@ ITEM = {"id": str, "title": str, "kind": ("visit", "transport", "meal", "rest", 
         "start": str, "end": str, "place_id": NSTR, "description": str,
         "minimum_minutes": float, "buffer_minutes": float, "booking_id": NSTR,
         "source_ids": [str], "windows": [{"start": str, "end": str}], "notes": str}
+CARD_SECTIONS = ("days", "meeting", "packing", "cost", "reminders", "roles", "polls", "aa")
 CARD = {
+    "draft": str,
+    "sections": [CARD_SECTIONS],
     "author": str,
     "meeting": {"time": NSTR, "place": str},
     "packing": [str],
@@ -158,6 +161,8 @@ def validate(plan, as_of=None):
         if t["deadline"]:
             stamps.append((f"task:{t['id']}.deadline", t["deadline"]))
     card = plan.get("card", {})
+    if "draft" in card and not card["draft"].strip():
+        errors.append("card.draft: 审核文案不能为空")
     if card.get("meeting") and card["meeting"]["time"]:
         stamps.append(("card.meeting.time", card["meeting"]["time"]))
     for n, poll in enumerate(card.get("polls", []), 1):
@@ -783,6 +788,7 @@ def aa_result(aa):
 
 def card_content(plan, report):
     card = plan.get("card", {})
+    selected = set(card.get("sections", []))
     trip = plan["trip"]
     start, end = trip["start_date"], trip["end_date"]
     days = (day(end) - day(start)).days + 1 if start and end and day(end) >= day(start) else None
@@ -792,21 +798,21 @@ def card_content(plan, report):
     meeting = card.get("meeting") or {}
     meeting_text = " · ".join(x for x in (card_time(meeting.get("time")), meeting.get("place")) if x) or "集合时间与地点待定"
     reminders = [public_text(x) for x in report["blockers"]]
-    if not reminders:
+    if not reminders and "reminders" in selected:
         reminders = [public_text(r["trigger"] + "：" + r["action"]) for r in plan["risks"] if not r["resolved"]]
-    if not reminders:
-        reminders = ["出发前再次核对交通、预约与天气。"]
-    aa = card.get("aa") or {}
+    aa = (card.get("aa") or {}) if "aa" in selected else {}
     balances, planned, transfers = aa_result(aa)
     names = {member["id"]: public_text(member["name"]) for member in aa.get("members", [])}
     return {"destination": public_text(trip["destination"] or "目的地待定"),
             "origin": public_text(trip["origin"] or "出发地待定"),
             "date": date_text, "people": trip["travelers"], "status": status_text,
-            "demo": plan["is_demo"], "meeting": public_text(meeting_text),
-            "cost": card_cost(plan), "days": [(d["date"], public_text(d["summary"])) for d in sorted(plan["days"], key=lambda d: d["date"])],
-            "packing": [public_text(x) for x in card.get("packing", [])],
-            "reminders": reminders, "roles": card.get("roles", []),
-            "polls": card.get("polls", []), "names": names,
+            "demo": plan["is_demo"], "meeting": public_text(meeting_text) if "meeting" in selected else "",
+            "cost": card_cost(plan) if "cost" in selected else "",
+            "duration": days,
+            "days": [(d["date"], public_text(d["summary"])) for d in sorted(plan["days"], key=lambda d: d["date"])] if "days" in selected else [],
+            "packing": [public_text(x) for x in card.get("packing", [])] if "packing" in selected else [],
+            "reminders": reminders, "roles": card.get("roles", []) if "roles" in selected else [],
+            "polls": card.get("polls", []) if "polls" in selected else [], "names": names,
             "balances": balances, "planned": planned, "transfers": transfers,
             "aa_expenses": bool(aa.get("expenses")),
             "aa_paid": any(x["status"] == "paid" for x in aa.get("expenses", [])),
@@ -821,21 +827,26 @@ def card_text(info):
              info["status"]]
     if info["demo"]:
         lines.append("演示数据 · 地点、价格与安排均为虚构")
-    lines.extend((f'集合：{info["meeting"]}', f'人均必需费用：{info["cost"]}', "", "行程"))
-    lines.extend(f'{date}  {summary}' for date, summary in info["days"])
-    if not info["days"]:
-        lines.append("行程待整理")
-    lines.extend(("", "必带物品：" + ("、".join(info["packing"]) if info["packing"] else "待整理"),
-                  "注意：" + "；".join(info["reminders"][:3])))
+    if info["meeting"]:
+        lines.append(f'集合：{info["meeting"]}')
+    if info["cost"]:
+        lines.append(f'人均必需费用：{info["cost"]}')
+    if info["days"]:
+        lines.extend(("", "行程"))
+        lines.extend(f'{date}  {summary}' for date, summary in info["days"])
+    if info["packing"]:
+        lines.extend(("", "必带物品：" + "、".join(info["packing"])))
+    if info["reminders"]:
+        lines.extend(("", "待留意：" + "；".join(info["reminders"])))
     if info["polls"]:
-        lines.extend(("", "投票（在群里回复编号）"))
+        lines.extend(("", "投票"))
         for i, poll in enumerate(info["polls"], 1):
             lines.append(f'{chr(64 + i) if i <= 26 else i}. {public_text(poll["question"])}')
             lines.extend(f'{chr(64 + i) if i <= 26 else i}{n} {public_text(option)}' for n, option in enumerate(poll["options"], 1))
             if poll["deadline"]:
                 lines.append(f'截止：{card_time(poll["deadline"])}')
     if info["roles"]:
-        lines.extend(("", "分工接龙（认领后写上名字）"))
+        lines.extend(("", "分工"))
         lines.extend(f'{n}. {public_text(role["role"])} → {public_text(role["assignee"] or "待认领")}'
                      for n, role in enumerate(info["roles"], 1))
     if info["names"] and info["aa_expenses"]:
@@ -874,32 +885,28 @@ def render_card(plan, report):
     def row(label, value, style="line-row"):
         return f'<div class="{style}"><b>{esc(label)}</b><span>{esc(short(value, 43))}</span></div>'
 
-    first_days = info["days"][:3]
     overview = ('<div class="hero"><div class="eyebrow">TRAVEL COMPANION / 一起出发</div>'
                 f'<h1>{esc(short(info["destination"], 14))}</h1>'
                 f'<p class="subtitle">从 {esc(short(info["origin"], 30))} 出发，路上见。</p></div>'
                 '<div class="summary">'
                 f'<div class="stat"><small>旅行日期</small><strong>{esc(short(info["date"], 31))}</strong></div>'
                 f'<div class="stat"><small>同行人数</small><strong>{info["people"]} 人</strong></div>'
-                f'<div class="stat"><small>计划天数</small><strong>{len(info["days"])} 天日程</strong></div></div>'
-                f'<div class="status"><span class="star">✦</span>{esc(info["status"])}</div>'
-                f'<div class="meeting"><b>集合</b><span>{esc(short(info["meeting"], 45))}</span></div>'
-                f'<div class="cost"><b>人均必需费用</b><strong>{esc(info["cost"])}</strong></div>'
-                + heading("每天怎么走")
-                + ("".join(row(d, s, "day-row") for d, s in first_days) if first_days else '<p class="tiny">行程待整理</p>')
-                + heading("随身带上")
-                + '<div class="chips">'
-                + ("".join(f'<span class="chip">{esc(short(x, 15))}</span>' for x in info["packing"][:6])
-                   if info["packing"] else '<span class="tiny">必带物品待整理</span>')
-                + '</div>' + heading("出发前留意")
-                + "".join(f'<p class="reminder">{esc(short(x, 55))}</p>' for x in info["reminders"][:3]))
-    pages.append(overview)
+                f'<div class="stat"><small>计划天数</small><strong>{info["duration"] or "待定"} 天</strong></div></div>'
+                f'<div class="status"><span class="star">✦</span>{esc(info["status"])}</div>')
 
-    # Subsequent sheets have a fixed content budget. Keep every row; shorten only
-    # its visual excerpt. The text edition carries full free-text content.
+    # All selected sections share the first sheet; only explicit multi-page
+    # exports may spill onto subsequent sheets. No empty filler sections.
     groups = []
-    if len(info["days"]) > 3:
-        groups.append(("行程续篇", [(row(d, s, "day-row"), 1) for d, s in info["days"][3:]]))
+    if info["meeting"]:
+        groups.append(("集合", [(row("时间与地点", info["meeting"]), 1)]))
+    if info["cost"]:
+        groups.append(("费用", [(row("人均必需费用", info["cost"]), 1)]))
+    if info["days"]:
+        groups.append(("每天怎么走", [(row(d, s, "day-row"), 1) for d, s in info["days"]]))
+    if info["packing"]:
+        groups.append(("随身带上", [(row(str(n), item), 1) for n, item in enumerate(info["packing"], 1)]))
+    if info["reminders"]:
+        groups.append(("出发前留意", [(row(str(n), item), 1) for n, item in enumerate(info["reminders"], 1)]))
     if info["polls"]:
         entries = []
         for i, poll in enumerate(info["polls"], 1):
@@ -915,9 +922,9 @@ def render_card(plan, report):
                 if poll["deadline"]:
                     block += f'<div class="poll-deadline">截止 {esc(card_time(poll["deadline"]))}</div>'
                 entries.append((block + '</div>', 1 + len(subset)))
-        groups.append(("投票 · 在群里回复编号", entries))
+        groups.append(("投票", entries))
     if info["roles"]:
-        groups.append(("分工 · 等你认领", [
+        groups.append(("分工", [
             (row(role["role"], role["assignee"] or "待认领"), 1)
             for role in info["roles"]]))
     if info["names"] and info["aa_expenses"]:
@@ -938,19 +945,21 @@ def render_card(plan, report):
         groups.append(("AA · 已付款才结算", entries))
 
     secondary, used, active_group = [], 0, None
+    capacity = 11
     for title, entries in groups:
         for block, units in entries:
-            if used + units + (1 if active_group != title else 0) > 19 and secondary:
-                pages.append('<div class="body-secondary">' + "".join(secondary) + '</div>')
+            if used + units + (1 if active_group != title else 0) > capacity and secondary:
+                pages.append((overview if not pages else '') + '<div class="body-secondary">' + "".join(secondary) + '</div>')
                 secondary, used, active_group = [], 0, None
+                capacity = 19
             if active_group != title:
                 secondary.append(heading(title))
                 used += 1
                 active_group = title
             secondary.append(block)
             used += units
-    if secondary:
-        pages.append('<div class="body-secondary">' + "".join(secondary) + '</div>')
+    if secondary or not pages:
+        pages.append((overview if not pages else '') + '<div class="body-secondary">' + "".join(secondary) + '</div>')
 
     page_html = []
     total = len(pages)
@@ -959,7 +968,7 @@ def render_card(plan, report):
         page_html.append('<article class="sheet" id="page-' + str(number) + '">'
                          '<div class="topline"><span class="stamp">搭子卡</span><span>一起走，慢慢玩</span></div>'
                          + demo + body
-                         + f'<div class="sheet-foot"><span>完整信息见群聊文字版</span><strong>由 travel-planner 生成 · @{esc(info["author"])}</strong><span>{number:02d} / {total:02d}</span></div>'
+                         + f'<div class="sheet-foot"><span>一起出发</span><strong>由 travel-planner 生成 · @{esc(info["author"])}</strong><span>{number:02d} / {total:02d}</span></div>'
                          '</article>')
     template = (ROOT / "assets" / "dazi-card-template.html").read_text(encoding="utf-8")
     tokens = {"TITLE": esc(info["destination"]), "PAGES": "".join(page_html)}
@@ -1007,26 +1016,147 @@ def screenshot_cards(browser, source, destinations):
                 os.replace(shot, target)
 
 
-def create_card(plan, report, output_dir, force=False):
-    html_page, txt, count = render_card(plan, report)
+class CardDesignParser(HTMLParser):
+    """Extract authored sheet copy, excluding only an explicitly marked credit.
+
+    This checks static text integrity, not CSS visibility or factual accuracy.
+    Browser inspection remains necessary before delivering an image.
+    """
+    VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stack = []
+        self.sheets = []
+        self.outside = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        parent = self.stack[-1] if self.stack else ("", None, False, False, False)
+        _, sheet, credit, ignored, body = parent
+        body = body or tag == "body"
+        ignored = ignored or tag in ("head", "style", "template")
+        if tag == "script" or any(key.startswith("on") for key in attrs):
+            raise ValueError("自由设计 HTML 应为静态内容；移除脚本和事件属性，分页由导出器处理。")
+        if "sheet" in attrs.get("class", "").split():
+            if sheet is not None or not body or ignored:
+                raise ValueError(".sheet 必须位于 body 中，不能嵌套或隐藏在模板中")
+            expected = f"page-{len(self.sheets) + 1}"
+            if attrs.get("id") != expected:
+                raise ValueError(f"卡片分页标识应为 {expected}")
+            sheet = len(self.sheets)
+            self.sheets.append({"copy": [], "credit": [], "credits": 0})
+        if "data-card-credit" in attrs:
+            if sheet is None or credit:
+                raise ValueError("署名必须位于卡片内且不能嵌套")
+            credit = True
+            self.sheets[sheet]["credits"] += 1
+        if tag not in self.VOID:
+            self.stack.append((tag, sheet, credit, ignored, body))
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        if tag not in self.VOID:
+            self.handle_endtag(tag)
+
+    def handle_endtag(self, tag):
+        if tag in self.VOID:
+            return
+        if not self.stack or self.stack[-1][0] != tag:
+            raise ValueError(f"设计 HTML 标签未正确闭合：{tag}")
+        self.stack.pop()
+
+    def handle_data(self, data):
+        if not self.stack:
+            if data.strip():
+                self.outside.append(data)
+            return
+        _, sheet, credit, ignored, body = self.stack[-1]
+        if ignored:
+            return
+        if not body or sheet is None:
+            if data.strip():
+                self.outside.append(data)
+        else:
+            self.sheets[sheet]["credit" if credit else "copy"].append(data)
+
+
+def prepare_card_design(source, plan):
+    """Validate copy and wrap a static, self-contained design for PNG export."""
+    check = audit(source)
+    if not check["passed"]:
+        raise ValueError("搭子卡设计离线静态检查失败：" + "; ".join(check["issues"]))
+    parser = CardDesignParser()
+    parser.feed(source)
+    parser.close()
+    if parser.stack or not parser.sheets or parser.outside:
+        raise ValueError("设计需要完整闭合的 HTML，所有可见文字须放在 .sheet 内")
+    if not re.search(r"</head\s*>", source, re.I) or not re.search(r"</body\s*>", source, re.I):
+        raise ValueError("设计需要完整 head 和 body")
+    normalize = lambda text: re.sub(r"\s+", "", text)
+    actual = "".join("".join(sheet["copy"]) for sheet in parser.sheets)
+    if normalize(actual) != normalize(plan["card"]["draft"]):
+        raise ValueError("设计文字与 card.draft 不一致；请保留完整审核文案，不增删、不截字。")
+    author = public_text(plan["card"].get("author") or "杰纶hhh")
+    credit = normalize(f"由 travel-planner 生成 · @{author}")
+    for sheet in parser.sheets:
+        if sheet["credits"] != 1 or normalize("".join(sheet["credit"])) != credit:
+            raise ValueError("每张卡需有一处 data-card-credit 署名：由 travel-planner 生成 · @作者")
+    # Only geometry and page selection are shared. Authored typography, colors,
+    # content hierarchy and decorative SVG remain entirely design-specific.
+    geometry = ('<style>html,body{margin:0!important;padding:0!important}'
+                '.sheet{width:1080px!important;height:1440px!important;box-sizing:border-box!important;'
+                'margin:0!important;position:relative}.sheet[hidden]{display:none!important}</style>')
+    controller = ('<script>(function(){var m=location.hash.match(/^#page-(\\d+)$/);'
+                  'if(!m)return;document.querySelectorAll(".sheet").forEach(function(s,i){'
+                  's.hidden=i+1!==Number(m[1]);});})();</script>')
+    source = re.sub(r"</head\s*>", lambda m: geometry + m[0], source, count=1, flags=re.I)
+    source = re.sub(r"</body\s*>", lambda m: controller + m[0], source, count=1, flags=re.I)
+    return source, len(parser.sheets)
+
+
+def create_card(plan, report, output_dir, force=False, output_format="draft", approved=False, allow_multiple=False, design_html=None):
+    if report["schema_errors"]:
+        raise ValueError("结构错误，拒绝生成搭子卡")
+    card = plan.get("card", {})
+    if "draft" not in card and "sections" not in card:
+        raise ValueError("请先起草 card.draft 并让用户审核；旧数据可继续使用 card.sections。")
+    if output_format not in ("draft", "image", "text"):
+        raise ValueError("不支持的搭子卡格式")
+    if output_format != "draft" and not approved:
+        raise ValueError("请先展示文字草稿，用户确认该版内容和输出形式后再使用 --approved。")
+    if design_html is not None and (output_format != "image" or "draft" not in card):
+        raise ValueError("--html 仅用于带 card.draft 的图片导出")
+    folder = Path(output_dir)
+    if output_format in ("draft", "text"):
+        text_file = folder / ("card-draft.txt" if output_format == "draft" else "dazi-card.txt")
+        txt = card["draft"] if "draft" in card else card_text(card_content(plan, report))
+        write_new(text_file, ("搭子卡文字草稿 · 待审核\n\n" if output_format == "draft" else "") + txt, force)
+        return {"stage": output_format, "text": str(text_file.resolve()), "images": [], "expected_images": []}
+    if "draft" in card:
+        if design_html is None:
+            raise ValueError("自由文案需要用 --html 提供本次设计，不能退回固定栏目模板。")
+        html_page, count = prepare_card_design(Path(design_html).read_text(encoding="utf-8"), plan)
+    else:
+        html_page, _, count = render_card(plan, report)
+    if count > 1 and not allow_multiple:
+        raise ValueError(f"当前内容需要 {count} 张卡片；请精简文字草稿并重新审核。只有用户明确同意多张时才使用 --allow-multiple。")
     check = audit(html_page)
     if not check["passed"]:
         raise ValueError("搭子卡模板离线静态检查失败：" + "; ".join(check["issues"]))
-    folder = Path(output_dir)
-    source, text_file = folder / "dazi-card.html", folder / "dazi-card.txt"
+    source = folder / "dazi-card.html"
     destination = short(plan["trip"]["destination"] or "目的地待定", 18)
     safe_name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "-", destination).strip(" .") or "目的地待定"
     start = plan["trip"]["start_date"] or "日期待定"
     images = [folder / f"搭子卡-{safe_name}-{start}-{n:02d}.png" for n in range(1, count + 1)]
-    targets = [source, text_file, *images]
+    targets = [source, *images]
     if not force:
         existing = next((path for path in targets if path.exists()), None)
         if existing:
             raise FileExistsError(17, "目标文件已存在", str(existing))
     write_new(source, html_page, force)
-    write_new(text_file, txt, force)
     browser = available_browser()
-    result = {"html": str(source.resolve()), "text": str(text_file.resolve()),
+    result = {"stage": "image", "html": str(source.resolve()),
               "images": [], "expected_images": [str(path.resolve()) for path in images]}
     if not browser:
         result["image_error"] = "未找到本机 Chrome/Edge；请由当前 Agent 的浏览器工具自动截图后交付 PNG。"
@@ -1063,6 +1193,10 @@ def main():
             p.add_argument("--out", required=True)
         if command == "card":
             p.add_argument("-o", "--out", required=True, help="搭子卡输出目录")
+            p.add_argument("--format", choices=("draft", "image", "text"), default="draft", help="默认仅生成审核文字草稿")
+            p.add_argument("--approved", action="store_true", help="用户已确认当前文字草稿及输出形式")
+            p.add_argument("--allow-multiple", action="store_true", help="用户已明确同意生成多张图片")
+            p.add_argument("--html", help="自由文案的自包含 HTML 设计文件")
     args = parser.parse_args()
     try:
         if args.cmd == "init":
@@ -1083,7 +1217,7 @@ def main():
                 write_new(args.out, output, args.force)
                 result["output"] = str(Path(args.out).resolve())
             if args.cmd == "card" and not result["schema_errors"]:
-                result["card"] = create_card(plan, result, args.out, args.force)
+                result["card"] = create_card(plan, result, args.out, args.force, args.format, args.approved, args.allow_multiple, args.html)
                 if result["card"].get("image_error"):
                     code = 2
         print(json.dumps(result, ensure_ascii=False, indent=2))
