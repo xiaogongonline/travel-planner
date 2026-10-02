@@ -88,6 +88,7 @@ emergency 字段：label/contact/basis/source_ids；只保存相关、核实的�
 | 字段 | 结构与用途 |
 | --- | --- |
 | `draft` | 非空字符串，完整审核文案；可用换行组织标题和段落，不限制栏目名称。自由设计图片必须与该文字匹配，仅允许排版空白变化。 |
+| `background` | 可选枚举 `keep` / `destination-image`。缺省或 `keep` 保留原背景；只有用户明确选择目的地特色图片时才使用 `destination-image`。这是背景选择，不能从目的地、人数或风格推定同意。图片导出须同时提供 `--background-image` 指向本地 JPEG、PNG 或 WebP；草稿和文字导出不需要素材。 |
 | `sections` | 兼容旧模板的栏目名数组：`days` 每日安排、`meeting` 集合、`packing` 物品、`cost` 人均费用、`reminders` 提醒、`roles` 分工、`polls` 投票、`aa` 结算。仅在没有 `draft` 时启用，旧模板保留其基础信息和阻断说明。新卡片不受这些栏目约束。 |
 | `author` | 字符串；缺省使用“杰纶hhh”，搭子卡底部和旅行手帐页脚均署名“由 travel-planner 生成 · @杰纶hhh” |
 | `meeting` | `{time, place}`；`time` 为带时区的 ISO 时间或 null，`place` 为适合群内公开的集合地点 |

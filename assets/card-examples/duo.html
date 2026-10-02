@@ -6,16 +6,18 @@
 <style>
 *{box-sizing:border-box}body{margin:0;background:#e9f1f1}
 .sheet{width:1080px;height:1440px;position:relative;padding:66px 76px;color:#193c45;background:#e9f1f1;font-family:"Microsoft YaHei",sans-serif}
-.label{font-size:19px;letter-spacing:3px;margin:0 0 66px;color:#527178}
-.river{position:absolute;right:26px;top:178px;width:350px;height:530px}
+.label{display:inline-block;font-size:19px;letter-spacing:2px;margin:0 0 54px;color:#527178;border:1px dashed #8eabaa;padding:12px 17px;transform:rotate(-2deg)}
+.river{position:absolute;right:26px;top:168px;width:350px;height:530px;transform:rotate(5deg);filter:drop-shadow(7px 12px 0 #c7d8d8)}
 h1{position:relative;z-index:1;font-family:"KaiTi","STKaiti",serif;font-size:115px;line-height:1.24;font-weight:400;letter-spacing:-5px;margin:0;width:660px}
-.date{font-size:27px;margin:35px 0 86px;color:#476971}
-.things{position:relative;width:100%;padding:44px 46px 40px;background:#fffdf7;border-radius:4px 54px 4px 4px;border-top:3px solid #d1caaa}
-h2{font-size:23px;font-weight:400;letter-spacing:4px;margin:0 0 29px;color:#527178}
-.item{display:flex;align-items:baseline;gap:23px;padding:20px 0;border-bottom:1px solid #d7ded7;font-size:29px;line-height:1.7;margin:0}
-.item:last-child{border-bottom:0;padding-bottom:0}.mark{flex-shrink:0;display:inline-block;width:10px;height:10px;border-radius:50%;background:#e77754}
-.note{margin:40px 0 0;padding-left:26px;border-left:4px solid #e77754;font-size:25px;line-height:1.8;color:#476971}
-.signoff{font-family:"KaiTi","STKaiti",serif;font-size:37px;margin:42px 0 0}
+.date{display:inline-block;position:relative;font-size:27px;margin:35px 0 65px;color:#476971;background:#f5edcd;padding:11px 21px;transform:rotate(-2deg)}
+.things{position:relative;width:100%;padding:43px 46px 39px;background:#fffdf7;border-radius:2px;box-shadow:6px 9px 0 rgba(31,68,74,.09);transform:rotate(-1deg);border-bottom:3px dashed #dfd8bf}
+.things:before{content:"";position:absolute;top:-17px;left:330px;width:190px;height:38px;background:repeating-linear-gradient(115deg,#d7b886b8 0 8px,#e9cda1b8 8px 16px);transform:rotate(4deg)}
+h2{font-family:"KaiTi","STKaiti",serif;font-size:32px;font-weight:400;letter-spacing:2px;margin:0 0 19px;color:#527178}
+.item{display:flex;align-items:baseline;gap:23px;padding:19px 0;border-bottom:1px solid #d7ded7;font-size:29px;line-height:1.7;margin:0}
+.item:last-child{border-bottom:0;padding-bottom:0}.mark{flex-shrink:0;display:inline-block;width:13px;height:13px;border:2px solid #e77754;transform:rotate(12deg)}
+.note{display:inline-block;position:relative;margin:40px 0 0;padding:16px 26px;background:#f5e8c8;box-shadow:3px 6px 0 #d0dcd8;font-size:25px;line-height:1.8;color:#476971;transform:rotate(2deg)}
+.note:before{content:"";position:absolute;top:-12px;right:20px;width:80px;height:24px;background:#e7775475;transform:rotate(-8deg)}
+.signoff{font-family:"KaiTi","STKaiti",serif;font-size:37px;margin:38px 0 0}
 footer{position:absolute;left:76px;bottom:48px;font-size:17px;letter-spacing:1px;color:#71898c}
 </style>
 </head>

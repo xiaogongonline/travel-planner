@@ -101,10 +101,17 @@ python scripts/travel_plan.py audit <work>/travel-plan.html
 
 先看完整文字稿，确认后才按内容设计图片。默认一张，不自动附赠群聊文字版。想只发文字时说明即可，同样先审稿。只改配色和排版不用重复审文字；内容变化会重新展示。内容太多先调整排版，再一起精简，不截字、不自动加页。Skill 不自动发送消息。
 
-同样的生成流程，可以得到不同的表达和布局。以下均为虚构示例：
+分享卡片默认采用手账排版：纸片、胶带、便签和细线，按内容自由设计。你的风格要求或参考图优先。
 
-![双人旅行卡：把周末留给河边](docs/dazi-card-duo.png)
-![朋友出游卡：先碰头，再慢慢玩](docs/dazi-card-friends.png)
+制作图片时，AI 会先问背景保留原样，还是换成模糊的目的地特色图片。不需要或未选择时保留原背景；选择图片后，才使用与目的地相符的照片，单独模糊、淡化并嵌入文件，离线也能打开。不会把正文一起模糊。只发文字时不询问背景。
+
+以下为不同手账布局的虚构示例，前两张保留原底色，第三张演示选择杭州西湖照片背景：
+
+![双人旅行卡：把周末留给河边](docs/dazi-card-journal-duo.png)
+![朋友出游卡：先碰头，再慢慢玩](docs/dazi-card-journal-friends.png)
+![目的地照片背景：杭州西湖手账卡](docs/dazi-card-journal-destination.png)
+
+演示照片来自 [Hippopx：杭州西湖（CC0）](https://www.hippopx.com/en/west-lake-hangzhou-china-391710)，来源记录见 [示例图片说明](assets/card-examples/IMAGE-SOURCES.md)。照片仅作背景，示例行程均为虚构。
 
 本地命令（在 `plan.json` 的 `card.draft` 中保存完整文案）：
 
@@ -113,11 +120,13 @@ python scripts/travel_plan.py audit <work>/travel-plan.html
 python scripts/travel_plan.py card <work>/plan.json -o <work>/dazi-card
 # 用户确认文案后，用本次独立设计出图
 python scripts/travel_plan.py card <work>/plan.json -o <work>/dazi-card --format image --approved --html <work>/design.html
+# 仅当用户明确选择照片背景，先在 card 中设置 "background": "destination-image"
+python scripts/travel_plan.py card <work>/plan.json -o <work>/dazi-card --format image --approved --html <work>/design.html --background-image <work>/destination.jpg
 # 只有需要分享文字时才执行
 python scripts/travel_plan.py card <work>/plan.json -o <work>/dazi-card --format text --approved
 ```
 
-出图使用 Python 3 标准库与本机 Chrome/Edge，生成 1080×1440 PNG。设计文件自包含，文字必须与审核稿一致；具体结构见 [交付说明](references/delivery.md)。没有本机浏览器时，Agent 可用已有浏览器工具继续截图，否则如实报告未完成。CLI 默认不覆盖；明确覆盖时加 `--force`。旧 `card.sections` 与固定模板继续兼容，但不限制新卡片的表达。旅行手帐的数据和流程保持不变。
+出图使用 Python 3 标准库与本机 Chrome/Edge，生成 1080×1440 PNG。不选择照片时不需要素材文件；选择后支持本地 JPEG、PNG、WebP，自动嵌入为离线背景。设计文件自包含，文字必须与审核稿一致；具体结构见 [交付说明](references/delivery.md)。没有本机浏览器时，Agent 可用已有浏览器工具继续截图，否则如实报告未完成。CLI 默认不覆盖；明确覆盖时加 `--force`。旧 `card.sections` 与固定模板继续兼容，但不限制新卡片的表达。旅行手帐的数据和流程保持不变。
 
 ## 能力边界
 

@@ -5,19 +5,21 @@
 <title>先碰头，再慢慢玩</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#172e2b}
-.sheet{width:1080px;height:1440px;position:relative;padding:66px 74px;color:#f8f6e9;background:#172e2b;font-family:"Microsoft YaHei",sans-serif}
-.kicker{font-size:25px;letter-spacing:5px;margin:0;padding-bottom:28px;border-bottom:2px solid #789079}
+.sheet{width:1080px;height:1440px;position:relative;padding:66px 74px;color:#f8f6e9;background:#172e2b;font-family:"Microsoft YaHei",sans-serif;--card-background-wash:rgba(23,46,43,.68)}
+.kicker{display:inline-block;font-size:25px;letter-spacing:5px;margin:0;padding:12px 25px;border:2px dashed #a5b39b;transform:rotate(-2deg)}
 .arrow{position:absolute;width:62px;height:62px;right:74px;top:51px;transform:rotate(-12deg)}
-h1{font-size:76px;letter-spacing:-3px;line-height:1.4;margin:64px 0 22px;font-weight:900}
-.date{font-size:28px;color:#d8ecad;margin:0 0 68px}
-.ticket{position:relative;border-top:2px solid #789079;border-bottom:2px solid #789079;padding:32px 0 48px}
-h2{font-size:23px;margin:0 0 40px;letter-spacing:4px;color:#b4c5b4;font-weight:400}
-.meet{display:grid;grid-template-columns:390px 1fr;gap:44px;align-items:center;font-size:32px;line-height:1.8;margin:0 0 47px;font-weight:700;color:#dbf18a}
-.clock{font-size:139px;font-weight:800;letter-spacing:-9px;line-height:1.3;font-variant-numeric:tabular-nums}
-.routes{display:grid;grid-template-columns:1fr 1fr;gap:45px}
-.route{font-size:30px;line-height:1.9;margin:0;padding-top:25px;border-top:1px solid #789079}
-.bring{font-size:31px;line-height:1.8;margin:50px 0 0;padding:22px 28px;background:#dbf18a;color:#172e2b;font-weight:700}
-.pending{font-size:25px;line-height:1.9;color:#c2cfbf;margin:31px 0 0}
+h1{font-family:"KaiTi","STKaiti",serif;font-size:80px;letter-spacing:-3px;line-height:1.4;margin:49px 0 22px;font-weight:400}
+.date{display:inline-block;font-size:28px;color:#172e2b;background:#d8ecad;padding:10px 20px;margin:0 0 58px;transform:rotate(1deg)}
+.ticket{position:relative;background:#f7f2e4;color:#29443d;padding:36px 40px 43px;box-shadow:9px 12px 0 #0f2422;transform:rotate(-1deg);border-bottom:3px dashed #c1b8a1}
+.ticket:before{content:"";position:absolute;top:-16px;left:320px;width:220px;height:35px;background:repeating-linear-gradient(70deg,#b3cba3c9 0 7px,#d6debdc9 7px 14px);transform:rotate(3deg)}
+h2{font-family:"KaiTi","STKaiti",serif;font-size:34px;margin:0 0 27px;letter-spacing:4px;color:#4d6756;font-weight:400}
+.meet{display:grid;grid-template-columns:360px 1fr;gap:28px;align-items:center;font-size:30px;line-height:1.8;margin:0 0 32px;font-weight:700;color:#3f6753}
+.clock{font-size:122px;font-weight:800;letter-spacing:-9px;line-height:1.3;font-variant-numeric:tabular-nums}
+.routes{display:grid;grid-template-columns:1fr 1fr;gap:32px}
+.route{font-size:28px;line-height:1.9;margin:0;padding-top:23px;border-top:1px solid #a5b39b}
+.bring{display:inline-block;position:relative;font-size:31px;line-height:1.8;margin:51px 0 0;padding:19px 28px;background:#e4d2a9;color:#172e2b;font-weight:700;transform:rotate(2deg);box-shadow:4px 6px 0 #0f2422}
+.bring:before{content:"";position:absolute;top:-11px;right:32px;width:78px;height:24px;background:#a5b39bc9;transform:rotate(-10deg)}
+.pending{font-family:"KaiTi","STKaiti",serif;font-size:30px;line-height:1.9;color:#e4e8d7;margin:31px 0 0}
 .demo{position:absolute;left:74px;bottom:107px;color:#a6b7a9;font-size:18px}
 footer{position:absolute;left:74px;right:74px;bottom:49px;padding-top:22px;border-top:1px solid #789079;color:#a6b7a9;font-size:17px;letter-spacing:1px}
 </style>

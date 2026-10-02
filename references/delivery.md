@@ -62,7 +62,17 @@ HTML 的待办支持点击标题、复选框或键盘空格切换，初始值来
 python <skill>/scripts/travel_plan.py card plan.json -o dazi-card
 ```
 
-默认只生成 `card-draft.txt`，不会启动浏览器。用户确认当前文案后，AI 按内容设计自包含 HTML/CSS，用户风格要求或参考图优先。无需让用户每次选择模板；允许自由安排标题、段落、图形、配色和字体，默认使用本地字体、CSS 和内嵌 SVG，不添加图片生成服务或联网素材依赖。不能只替换原模板的颜色就宣称独立设计。可参考 `assets/card-examples/` 的两种示例，但不要把它们变成新的强制模板。
+默认只生成 `card-draft.txt`，不会启动浏览器。用户确认当前文案后，AI 按内容设计自包含 HTML/CSS，用户风格要求或参考图优先。无需让用户每次选择模板；允许自由安排标题、段落、图形、配色和字体，默认使用本地字体、CSS 和内嵌 SVG，不添加图片生成服务或联网素材依赖。不能只替换原模板的颜色就宣称独立设计。默认采用手账排版：用纸片、胶带、便签、细线、邮戳感图形和少量手写感标题组织内容，保留足够留白，装饰不压住正文。不强制这些元素全部出现，也不规定栏目顺序。参考 `assets/card-examples/` 的不同设计，但不要把它们变成新的强制模板。
+
+#### 背景由用户选择
+
+准备图片时，在展示文字稿或讨论视觉修改时一次询问：“背景保留现在的样式，还是换成模糊的目的地特色图片？”已有明确选择时直接沿用，不重复询问。只导出文字时跳过背景问题。用户未选择或说不需要，设 `card.background="keep"`（缺省等同保留），沿用现有背景；添加手账元素不构成换背景的授权。
+
+用户明确选择特色图片后，设 `card.background="destination-image"`。优先使用用户提供的照片；需要找素材时才查询可使用的目的地照片，核对地点与许可，并记录来源。不得用其他城市的地标充当目的地。目的地尚未确定或没有可用图片时说明缺少什么，等待用户提供照片或选择其他背景；不默默换成无关照片或声称已经完成。不引入图片生成服务。
+
+把 JPEG、PNG 或 WebP 保存到本地，通过 `--background-image` 传给图片导出器。图片会以 data URL 嵌入每页，自包含、无网络请求，背景层单独模糊 12px 并加淡化遮罩，正文保持清晰。设计可用 `.sheet{--card-background-wash:rgba(255,250,240,.68)}` 调整遮罩；深色设计可以用深色半透明遮罩。不要对整张卡片设置 blur。卡面仍用不透明或足够清晰的纸片承载正文。未同意图片时，设计 HTML 也不能暗中内嵌照片；CLI 对传入素材的选择检查不能代替 Agent 遵守这一规则。
+
+背景和排版属于视觉修改，不需要重审已确认的文字；改写标题、正文或增加地点说明时，重新展示完整稿件并确认。此规则只用于搭子卡，手机攻略继续采用原有纯排版封面。
 
 #### 设计文件约定
 
@@ -76,6 +86,8 @@ python <skill>/scripts/travel_plan.py card plan.json -o dazi-card
 
 ```text
 python <skill>/scripts/travel_plan.py card plan.json -o dazi-card --format image --approved --html design.html
+# 仅当用户选择特色图片且 card.background 为 destination-image
+python <skill>/scripts/travel_plan.py card plan.json -o dazi-card --format image --approved --html design.html --background-image destination.jpg
 python <skill>/scripts/travel_plan.py card plan.json -o dazi-card --format text --approved
 ```
 
@@ -85,10 +97,10 @@ python <skill>/scripts/travel_plan.py card plan.json -o dazi-card --format text 
 
 #### 验收与交付
 
-退出码沿用 `check`：2 为格式/运行错误，1 为行程仍有可行性阻断，0 为机械检查没有阻断。自由稿不自动抄写 blockers，但返回报告保留原核验结果；图片成功不表示行程就绪。`card.stage` 区分 draft/image/text。只有 image 阶段 `images` 非空且与 `expected_images` 一致才表示出图完成。若 `image_error` 存在，用当前可用浏览器工具打开生成 HTML 并截图；无浏览器能力时如实报告未完成，不能交付 HTML 冒充图片。
+退出码沿用 `check`：2 为格式/运行错误，1 为行程仍有可行性阻断，0 为机械检查没有阻断。自由稿不自动抄写 blockers，但返回报告保留原核验结果；图片成功不表示行程就绪。`card.stage` 区分 draft/image/text。`card.background` 在图片结果中报告实际选择；缺少素材时不生成替代背景。只有 image 阶段 `images` 非空且与 `expected_images` 一致才表示出图完成。若 `image_error` 存在，用当前可用浏览器工具打开生成 HTML 并截图；无浏览器能力时如实报告未完成，不能交付 HTML 冒充图片。
 
-在浏览器中阻断网络并重新打开，检查没有外部请求、脚本错误、裁切或遮挡。逐字对照审核稿，检查 DOM 文字实际可见、字号可读、署名不过分抢眼、页数符合要求。静态文字匹配不能证明可见，也不能证明事实正确。出图前后均核对与原行程相关的事实；图片不依赖额外文字文件。仅改卡片时不必重跑手帐全部交互测试。
+在浏览器中阻断网络并重新打开，检查没有外部请求、脚本错误、裁切或遮挡。逐字对照审核稿，检查 DOM 文字实际可见、字号可读、署名不过分抢眼、页数符合要求。保留背景时确认原底色或纹理未变；选用照片时确认地点相符、照片成功解码且仅背景模糊，纸片、胶带和阴影不遮字。静态文字匹配不能证明可见，也不能证明事实正确。出图前后均核对与原行程相关的事实；图片不依赖额外文字文件。仅改卡片时不必重跑手帐全部交互测试。
 
-`assets/card-examples/copy.json` 保存双人和朋友两份虚构自由稿，配套 HTML 在同目录；它们是可复用的设计示例及测试素材。README 的预览应对应实际生成结果。微信粘贴和真实手机查看只有实际测试后才能称为已验证。卡片和文字均不自动发送。
+`assets/card-examples/copy.json` 保存双人、朋友和目的地照片背景三份虚构自由稿，配套 HTML 在同目录；它们是可复用的设计示例及测试素材。README 的预览应对应实际生成结果。微信粘贴和真实手机查看只有实际测试后才能称为已验证。卡片和文字均不自动发送。
 
 不要为基础交付引入 PWA、Service Worker、账号或后台。它们只有在用户确有需求且验证环境支持时才属于新增范围。

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 from functools import lru_cache
 from datetime import date, datetime
 from decimal import Decimal
@@ -47,6 +48,7 @@ ITEM = {"id": str, "title": str, "kind": ("visit", "transport", "meal", "rest", 
 CARD_SECTIONS = ("days", "meeting", "packing", "cost", "reminders", "roles", "polls", "aa")
 CARD = {
     "draft": str,
+    "background": ("keep", "destination-image"),
     "sections": [CARD_SECTIONS],
     "author": str,
     "meeting": {"time": NSTR, "place": str},
@@ -1115,7 +1117,35 @@ def prepare_card_design(source, plan):
     return source, len(parser.sheets)
 
 
-def create_card(plan, report, output_dir, force=False, output_format="draft", approved=False, allow_multiple=False, design_html=None):
+def add_destination_background(source, image_path):
+    """Embed a chosen raster image; blur the picture without blurring the copy."""
+    picture = Path(image_path).read_bytes()
+    if picture.startswith(b"\xff\xd8\xff"):
+        mime = "image/jpeg"
+    elif picture.startswith(b"\x89PNG\r\n\x1a\n"):
+        mime = "image/png"
+    elif picture.startswith(b"RIFF") and picture[8:12] == b"WEBP":
+        mime = "image/webp"
+    else:
+        raise ValueError("目的地背景需要本地 JPEG、PNG 或 WebP 图片")
+    encoded = base64.b64encode(picture).decode("ascii")
+    layer = (f'<div class="card-destination-background" aria-hidden="true">'
+             f'<img src="data:{mime};base64,{encoded}" alt=""></div>')
+    css = ('<style>.sheet{isolation:isolate;background:transparent!important}'
+           '.card-destination-background{position:absolute;inset:0;overflow:hidden;z-index:-1;pointer-events:none}'
+           '.card-destination-background img{width:100%;height:100%;object-fit:cover;'
+           'filter:blur(12px);transform:scale(1.06)}'
+           '.card-destination-background:after{content:"";position:absolute;inset:0;'
+           'background:var(--card-background-wash,rgba(255,250,240,.68))}</style>')
+    # Both legacy and authored sheets have a validated page-N identifier.
+    pattern = r'''(<[a-z][^>]*\sid\s*=\s*(["'])page-\d+\2[^>]*>)'''
+    source, inserted = re.subn(pattern, lambda match: match[0] + layer, source, flags=re.I)
+    if not inserted:
+        raise ValueError("未找到可放置背景的卡片分页")
+    return re.sub(r"</head\s*>", lambda match: css + match[0], source, count=1, flags=re.I)
+
+
+def create_card(plan, report, output_dir, force=False, output_format="draft", approved=False, allow_multiple=False, design_html=None, background_image=None):
     if report["schema_errors"]:
         raise ValueError("结构错误，拒绝生成搭子卡")
     card = plan.get("card", {})
@@ -1127,12 +1157,16 @@ def create_card(plan, report, output_dir, force=False, output_format="draft", ap
         raise ValueError("请先展示文字草稿，用户确认该版内容和输出形式后再使用 --approved。")
     if design_html is not None and (output_format != "image" or "draft" not in card):
         raise ValueError("--html 仅用于带 card.draft 的图片导出")
+    if background_image is not None and (output_format != "image" or card.get("background", "keep") != "destination-image"):
+        raise ValueError("只有用户已选择 card.background=destination-image 时，图片导出才可使用 --background-image。")
     folder = Path(output_dir)
     if output_format in ("draft", "text"):
         text_file = folder / ("card-draft.txt" if output_format == "draft" else "dazi-card.txt")
         txt = card["draft"] if "draft" in card else card_text(card_content(plan, report))
         write_new(text_file, ("搭子卡文字草稿 · 待审核\n\n" if output_format == "draft" else "") + txt, force)
         return {"stage": output_format, "text": str(text_file.resolve()), "images": [], "expected_images": []}
+    if card.get("background", "keep") == "destination-image" and background_image is None:
+        raise ValueError("已选择目的地特色图片背景，请用 --background-image 提供素材；不能静默改成其他背景。")
     if "draft" in card:
         if design_html is None:
             raise ValueError("自由文案需要用 --html 提供本次设计，不能退回固定栏目模板。")
@@ -1141,6 +1175,8 @@ def create_card(plan, report, output_dir, force=False, output_format="draft", ap
         html_page, _, count = render_card(plan, report)
     if count > 1 and not allow_multiple:
         raise ValueError(f"当前内容需要 {count} 张卡片；请精简文字草稿并重新审核。只有用户明确同意多张时才使用 --allow-multiple。")
+    if background_image is not None:
+        html_page = add_destination_background(html_page, background_image)
     check = audit(html_page)
     if not check["passed"]:
         raise ValueError("搭子卡模板离线静态检查失败：" + "; ".join(check["issues"]))
@@ -1156,7 +1192,7 @@ def create_card(plan, report, output_dir, force=False, output_format="draft", ap
             raise FileExistsError(17, "目标文件已存在", str(existing))
     write_new(source, html_page, force)
     browser = available_browser()
-    result = {"stage": "image", "html": str(source.resolve()),
+    result = {"stage": "image", "background": card.get("background", "keep"), "html": str(source.resolve()),
               "images": [], "expected_images": [str(path.resolve()) for path in images]}
     if not browser:
         result["image_error"] = "未找到本机 Chrome/Edge；请由当前 Agent 的浏览器工具自动截图后交付 PNG。"
@@ -1197,6 +1233,7 @@ def main():
             p.add_argument("--approved", action="store_true", help="用户已确认当前文字草稿及输出形式")
             p.add_argument("--allow-multiple", action="store_true", help="用户已明确同意生成多张图片")
             p.add_argument("--html", help="自由文案的自包含 HTML 设计文件")
+            p.add_argument("--background-image", help="用户选择后使用的本地目的地特色图片；嵌入并模糊为背景")
     args = parser.parse_args()
     try:
         if args.cmd == "init":
@@ -1217,7 +1254,7 @@ def main():
                 write_new(args.out, output, args.force)
                 result["output"] = str(Path(args.out).resolve())
             if args.cmd == "card" and not result["schema_errors"]:
-                result["card"] = create_card(plan, result, args.out, args.force, args.format, args.approved, args.allow_multiple, args.html)
+                result["card"] = create_card(plan, result, args.out, args.force, args.format, args.approved, args.allow_multiple, args.html, args.background_image)
                 if result["card"].get("image_error"):
                     code = 2
         print(json.dumps(result, ensure_ascii=False, indent=2))

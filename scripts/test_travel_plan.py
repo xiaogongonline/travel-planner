@@ -535,6 +535,8 @@ class PlannerTests(unittest.TestCase):
                 command = [sys.executable, "-B", str(tp.ROOT / "scripts/travel_plan.py"), "card", str(plan_path),
                            "-o", str(Path(folder) / "out"), "--format", "image", "--approved", "--as-of", AS_OF,
                            "--html", str(tp.ROOT / f"assets/card-examples/{name}.html")]
+                if card.get("background") == "destination-image":
+                    command.extend(["--background-image", str(tp.ROOT / "assets/card-examples/west-lake.jpg")])
                 done = subprocess.run(command, capture_output=True)
                 self.assertIn(done.returncode, (0, 1), done.stderr.decode("utf-8", "replace"))
                 result = json.loads(done.stdout.decode("utf-8"))["card"]
@@ -542,6 +544,71 @@ class PlannerTests(unittest.TestCase):
                 self.assertNotIn("text", result)
                 self.assertEqual(tp.png_size(result["images"][0]), (1080, 1440))
                 self.assertEqual({p.suffix for p in (Path(folder) / "out").iterdir()}, {".png", ".html"})
+
+    def test_destination_background_requires_choice_and_local_photo(self):
+        photo = tp.ROOT / "assets/card-examples/west-lake.jpg"
+        self.plan["card"] = {"draft": "我们的周末"}
+        with tempfile.TemporaryDirectory() as folder, patch.object(tp, "available_browser") as browser:
+            for choice in (None, "keep"):
+                if choice is not None:
+                    self.plan["card"]["background"] = choice
+                with self.assertRaisesRegex(ValueError, "只有用户已选择"):
+                    tp.create_card(self.plan, self.report(), folder, output_format="image", approved=True, background_image=photo)
+            self.plan["card"]["background"] = "destination-image"
+            with self.assertRaisesRegex(ValueError, "请用 --background-image"):
+                tp.create_card(self.plan, self.report(), folder, output_format="image", approved=True)
+            for form in ("draft", "text"):
+                with self.assertRaisesRegex(ValueError, "只有用户已选择"):
+                    tp.create_card(self.plan, self.report(), folder, output_format=form, approved=True, background_image=photo)
+            with self.assertRaisesRegex(ValueError, "文字草稿"):
+                tp.create_card(self.plan, self.report(), folder, output_format="image", background_image=photo)
+            browser.assert_not_called()
+            self.assertEqual(list(Path(folder).iterdir()), [])
+        self.plan["card"]["background"] = "automatic"
+        self.assertTrue(self.report()["schema_errors"])
+
+    def test_background_preserves_original_when_not_selected(self):
+        examples = tp.read_json(tp.ROOT / "assets/card-examples/copy.json")
+        with tempfile.TemporaryDirectory() as folder, patch.object(tp, "available_browser", return_value=None):
+            for name in ("duo", "friends"):
+                self.plan["card"] = examples[name].copy()
+                if name == "duo":
+                    self.plan["card"].pop("background")  # Missing selection also means keep.
+                result = tp.create_card(self.plan, self.report(), Path(folder) / name, output_format="image", approved=True,
+                                        design_html=tp.ROOT / f"assets/card-examples/{name}.html")
+                source = Path(result["html"]).read_text(encoding="utf-8")
+                self.assertEqual(result["background"], "keep")
+                self.assertNotIn("card-destination-background", source)
+                self.assertIn("background:#e9f1f1" if name == "duo" else "background:#172e2b", source)
+
+    def test_destination_background_embeds_offline_and_preserves_approved_copy(self):
+        self.plan["card"] = tp.read_json(tp.ROOT / "assets/card-examples/copy.json")["destination"]
+        photo = tp.ROOT / "assets/card-examples/west-lake.jpg"
+        with tempfile.TemporaryDirectory() as folder, patch.object(tp, "available_browser", return_value=None):
+            result = tp.create_card(self.plan, self.report(), folder, output_format="image", approved=True,
+                                    design_html=tp.ROOT / "assets/card-examples/destination.html", background_image=photo)
+            source = Path(result["html"]).read_text(encoding="utf-8")
+            self.assertEqual(result["background"], "destination-image")
+            self.assertIn("data:image/jpeg;base64,", source)
+            self.assertIn("filter:blur(12px)", source)
+            self.assertTrue(tp.audit(source)["passed"])
+            self.assertNotIn("text", result)
+            # Re-validate the final DOM, removing only the exporter's page controller.
+            static = source[:source.index("<script>")] + "</body></html>"
+            tp.prepare_card_design(static, self.plan)
+
+    def test_destination_background_handles_quote_styles_pages_and_invalid_input(self):
+        source = "<html><head></head><body><article class='sheet' id = 'page-1'><p data-id='page-3'></p></article><article class=\"sheet\" id=\"page-2\"></article></body></html>"
+        with tempfile.TemporaryDirectory() as folder:
+            photo = Path(folder) / "picture"
+            for signature, mime in ((b"\xff\xd8\xff", "jpeg"), (b"\x89PNG\r\n\x1a\n", "png"), (b"RIFF\0\0\0\0WEBP", "webp")):
+                photo.write_bytes(signature)
+                output = tp.add_destination_background(source, photo)
+                self.assertEqual(output.count(f"data:image/{mime};base64,"), 2)
+                self.assertTrue(tp.audit(output)["passed"])
+            photo.write_text("<svg></svg>", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "JPEG、PNG 或 WebP"):
+                tp.add_destination_background(source, photo)
 
 
 if __name__ == "__main__":
